@@ -21,7 +21,7 @@ const TU_NUMERO = '51996399291';
 const JID_DUEÑO = `${TU_NUMERO}@s.whatsapp.net`;
 const PUERTO = process.env.PORT || 3000;
 const LIMITE_DIARIO_ESTIMADO = 1400;
-const MAX_TOKENS_RESPUESTA = 500;
+const MAX_TOKENS_RESPUESTA = 1500;
 
 if (!CLAVE_IA_PRINCIPAL || !CLAVE_IA_RESPALDO) {
   console.log('❌ ALERTA: no se detectaron las API keys en las variables de entorno.');
@@ -68,7 +68,7 @@ const TEXTO_AYUDA = `🤖 *Comandos de ${NOMBRE_BOT}*
 /reglaspvp — reglas de PvP
 
 🧠 *IA*
-Menciona al bot (@${TU_NUMERO}) en tu mensaje para preguntarle algo. Recuerda tus conversaciones — usa /recordar para ver qué sabe de ti, o /olvidarme para borrarlo.`;
+Menciona al bot en tu mensaje para preguntarle algo. Recuerda tus conversaciones — usa /recordar o /olvidarme.`;
 
 const PALABRAS_CRISIS = [
   'quiero morir', 'no quiero vivir', 'suicidar', 'suicidio', 'matarme',
@@ -185,9 +185,12 @@ function programarRecordatorioGrupo(jidGrupo, minutos, texto) {
 let botActivo = true;
 let sockActivo = null;
 
+// ==== MODO DUEÑO (por chat personal, con contraseña) ====
+const modoJefe = new Map();
 function esContraseñaDueño(texto) {
   return CONTRASEÑA_DUEÑO && texto.trim() === CONTRASEÑA_DUEÑO;
 }
+// ==== FIN MODO DUEÑO ====
 
 function calcularTiempoTecleo(texto) {
   const ms = texto.length * 35;
@@ -241,8 +244,6 @@ async function generarRespuestaIA(prompt, notasExtra) {
   }
 }
 
-// Genera un avatar con IA. Si el nombre del modelo no funciona en tu cuenta,
-// cámbialo con la variable de entorno MODELO_IMAGEN en Render, sin tocar el código.
 async function generarAvatarIA(numero) {
   try {
     const res = await aiPrincipal.models.generateContent({
@@ -265,12 +266,17 @@ function obtenerNumeroBot(sock) {
   const raw = sock.user?.id || '';
   return raw.split(':')[0].split('@')[0];
 }
-function esMencionAlBot(msg, numeroBot) {
+
+// Detecta mención al bot de dos formas: por el listado de menciones de WhatsApp,
+// o directamente buscando "@numero" en el texto (respaldo por si el cliente no llena mentionedJid)
+function esMencionAlBot(msg, texto, numeroBot) {
   const mencionados = msg.message.extendedTextMessage?.contextInfo?.mentionedJid || [];
-  return mencionados.some(j => j.split('@')[0] === numeroBot);
+  if (mencionados.some(j => j.split('@')[0] === numeroBot)) return true;
+  return texto.includes(`@${numeroBot}`);
 }
+
 function debeResponderIA(texto, msg, numeroBot) {
-  if (esMencionAlBot(msg, numeroBot)) return true;
+  if (esMencionAlBot(msg, texto, numeroBot)) return true;
   if (!texto.trim().startsWith('/')) return false;
   const primeraPalabra = texto.trim().split(/\s+/)[0].toLowerCase();
   return !COMANDOS_RESERVADOS.includes(primeraPalabra);
@@ -581,6 +587,34 @@ No se permitirá el uso de armas distintas a las mencionadas.
 El incumplimiento de cualquiera de estas reglas ocasionará que el enfrentamiento sea declarado *NO VÁLIDO*.
 
 La escuadra rival será declarada vencedora automáticamente y avanzará a la siguiente ronda.`;
+
+async function procesarComandoJefe(sock, remitente, texto) {
+  const t = texto.toLowerCase().trim();
+
+  if (t === 'salir' || t.includes('salir del modo jefe') || t.includes('modo normal')) {
+    modoJefe.delete(remitente);
+    await sock.sendMessage(remitente, { text: 'Listo jefe, salí del modo administrador 🙌' });
+    return;
+  }
+  if (t.includes('informe') || t.includes('estado') || t.includes('estadistica') || t.includes('estadística')) {
+    const uptimeH = ((Date.now() - estado.inicio) / 3600000).toFixed(1);
+    await sock.sendMessage(remitente, {
+      text: `📊 *Informe de ${NOMBRE_BOT}*\nConectado: ${estado.conectado ? 'Sí' : 'No'}\nBot activo: ${botActivo ? 'Sí' : 'No'}\nUptime: ${uptimeH}h\nMensajes recibidos: ${estado.mensajesRecibidos}\nMensajes enviados: ${estado.mensajesEnviados}\nCuota IA hoy: ${contadorCuota.usados}/${LIMITE_DIARIO_ESTIMADO}\nReconexiones: ${estado.intentosReconexion}`
+    });
+    return;
+  }
+  if (t.includes('apaga')) {
+    botActivo = false;
+    await sock.sendMessage(remitente, { text: '🔴 Bot apagado en todos los grupos.' });
+    return;
+  }
+  if (t.includes('enciende') || t.includes('activa')) {
+    botActivo = true;
+    await sock.sendMessage(remitente, { text: '🟢 Bot encendido en todos los grupos.' });
+    return;
+  }
+  await sock.sendMessage(remitente, { text: 'No entendí ese comando, jefe. Puedes pedirme: informe, apagar el bot, encender el bot, o salir del modo jefe.' });
+}
 async function procesarMensajeGrupo(sock, msg) {
   const jidGrupo = msg.key.remoteJid;
   const jidUsuario = msg.key.participant || msg.key.remoteJid;
@@ -799,7 +833,22 @@ async function iniciarBot() {
 
     almacenMensajes.set(msg.key.id, msg.message);
 
-    if (!remitente.endsWith('@g.us')) return;
+    if (!remitente.endsWith('@g.us')) {
+      // Solo permitimos el flujo de modo dueño en chats personales, todo lo demás se ignora
+      if (remitente.endsWith('@s.whatsapp.net')) {
+        const textoPersonal = (msg.message.conversation || msg.message.extendedTextMessage?.text || '').trim();
+        if (esContraseñaDueño(textoPersonal)) {
+          modoJefe.set(remitente, true);
+          await sock.sendMessage(remitente, { text: `🔐 Bienvenido, jefe. Modo administrador activado.\n\nPuedes pedirme: informe, apagar el bot, encender el bot, o salir del modo jefe.` });
+          return;
+        }
+        if (modoJefe.get(remitente)) {
+          await procesarComandoJefe(sock, remitente, textoPersonal);
+          return;
+        }
+      }
+      return;
+    }
     if (!botActivo) return;
 
     const tipoMensaje = Object.keys(msg.message)[0];

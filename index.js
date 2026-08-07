@@ -5,12 +5,15 @@ const qrcodeTerminal = require('qrcode-terminal');
 const QRCode = require('qrcode');
 const express = require('express');
 const os = require('os');
+const fs = require('fs');
+const path = require('path');
 
 const CLAVE_IA_PRINCIPAL = process.env.CLAVE_IA_PRINCIPAL;
 const CLAVE_IA_RESPALDO = process.env.CLAVE_IA_RESPALDO;
 const CONTRASEÑA_DUEÑO = process.env.CONTRASENA_DUENO;
 const MODELO_PRINCIPAL = 'gemini-3.6-flash';
 const MODELO_RESPALDO = 'gemini-3.6-flash';
+const MODELO_IMAGEN = process.env.MODELO_IMAGEN || 'gemini-2.5-flash-image';
 const NOMBRE_BOT = 'Criss Bot';
 const CREADOR = 'Albert Oficial';
 const VERSION_BOT = '2.01.2';
@@ -18,7 +21,7 @@ const TU_NUMERO = '51996399291';
 const JID_DUEÑO = `${TU_NUMERO}@s.whatsapp.net`;
 const PUERTO = process.env.PORT || 3000;
 const LIMITE_DIARIO_ESTIMADO = 1400;
-const MAX_TOKENS_RESPUESTA = 1500;
+const MAX_TOKENS_RESPUESTA = 500;
 
 if (!CLAVE_IA_PRINCIPAL || !CLAVE_IA_RESPALDO) {
   console.log('❌ ALERTA: no se detectaron las API keys en las variables de entorno.');
@@ -32,7 +35,7 @@ const COMANDOS_RESERVADOS = [
   '/kick', '/eliminar', '/sacar', '/ban', '/promover', '/degradar',
   '/todos', '/everyone', '/cerrar', '/abrir', '/comandos', '/ayuda',
   '/meme', '/matrimonio', '/encuesta', '/perfil', '/recordatorio',
-  '/info', '/creador', '/reglas', '/reglaspvp'
+  '/info', '/creador', '/reglas', '/reglaspvp', '/recordar', '/olvidarme'
 ];
 
 const TEXTO_AYUDA = `🤖 *Comandos de ${NOMBRE_BOT}*
@@ -65,7 +68,7 @@ const TEXTO_AYUDA = `🤖 *Comandos de ${NOMBRE_BOT}*
 /reglaspvp — reglas de PvP
 
 🧠 *IA*
-Empieza tu mensaje con "/" y algo que no sea comando (ej: /Quien es Leo Dan)`;
+Menciona al bot (@${TU_NUMERO}) en tu mensaje para preguntarle algo. Recuerda tus conversaciones — usa /recordar para ver qué sabe de ti, o /olvidarme para borrarlo.`;
 
 const PALABRAS_CRISIS = [
   'quiero morir', 'no quiero vivir', 'suicidar', 'suicidio', 'matarme',
@@ -101,7 +104,7 @@ const SAFETY_SETTINGS = [
 const REGLAS_IA_BASE = `
 Eres ${NOMBRE_BOT}, y hablas como si fueras ${CREADOR} mismo respondiéndole a sus panas dentro de un GRUPO de WhatsApp. Personalidad cálida y con onda peruana, cercano, con harta jerga limeña, pero medida — choro y confianzudo, no formal ni acartonado.
 
-CONTEXTO: estás respondiendo dentro de un grupo, puede haber varias personas leyendo. Solo respondes cuando alguien usa "/" para preguntarte algo directamente.
+CONTEXTO: estás respondiendo dentro de un grupo, puede haber varias personas leyendo. Solo respondes cuando alguien te menciona directamente.
 
 INFORMACIÓN SOBRE ${CREADOR}:
 - Es el creador y desarrollador de este bot y de aplicaciones
@@ -135,18 +138,36 @@ function registrarUsoIA() {
 }
 function cuotaCasiAgotada() { return contadorCuota.usados >= LIMITE_DIARIO_ESTIMADO * 0.9; }
 
-const memoriaCorta = new Map();
+const ARCHIVO_MEMORIA = path.join(__dirname, 'memoria.json');
+function cargarMemoria() {
+  try { return JSON.parse(fs.readFileSync(ARCHIVO_MEMORIA, 'utf-8')); }
+  catch (err) { return {}; }
+}
+let memoriaPersistente = cargarMemoria();
+let guardadoPendiente = null;
+function guardarMemoria() {
+  if (guardadoPendiente) clearTimeout(guardadoPendiente);
+  guardadoPendiente = setTimeout(() => {
+    fs.writeFile(ARCHIVO_MEMORIA, JSON.stringify(memoriaPersistente), (err) => {
+      if (err) console.log('⚠️ Error guardando memoria:', err.message);
+    });
+  }, 2000);
+}
 function agregarAMemoriaCorta(jidUsuario, texto, respuesta) {
-  if (!memoriaCorta.has(jidUsuario)) memoriaCorta.set(jidUsuario, []);
-  const lista = memoriaCorta.get(jidUsuario);
-  lista.push({ texto, respuesta });
-  if (lista.length > 3) lista.shift();
+  if (!memoriaPersistente[jidUsuario]) memoriaPersistente[jidUsuario] = [];
+  memoriaPersistente[jidUsuario].push({ texto, respuesta, fecha: new Date().toISOString() });
+  if (memoriaPersistente[jidUsuario].length > 6) memoriaPersistente[jidUsuario].shift();
+  guardarMemoria();
 }
 function obtenerContextoCorto(jidUsuario) {
-  const lista = memoriaCorta.get(jidUsuario) || [];
+  const lista = memoriaPersistente[jidUsuario] || [];
   if (lista.length === 0) return '';
   return '\n\nHISTORIAL RECIENTE con esta persona:\n' +
     lista.map(m => `Dijo: "${m.texto}"\nRespondiste: "${m.respuesta}"`).join('\n---\n');
+}
+function olvidarUsuario(jidUsuario) {
+  delete memoriaPersistente[jidUsuario];
+  guardarMemoria();
 }
 
 const contadorMensajesGrupo = new Map();
@@ -220,7 +241,36 @@ async function generarRespuestaIA(prompt, notasExtra) {
   }
 }
 
-function debeResponderIA(texto) {
+// Genera un avatar con IA. Si el nombre del modelo no funciona en tu cuenta,
+// cámbialo con la variable de entorno MODELO_IMAGEN en Render, sin tocar el código.
+async function generarAvatarIA(numero) {
+  try {
+    const res = await aiPrincipal.models.generateContent({
+      model: MODELO_IMAGEN,
+      contents: 'Genera un avatar de perfil estilo caricatura/anime, colorido y llamativo, para usar como foto de perfil en un chat. Sin texto ni marcas de agua, fondo simple.',
+      config: { responseModalities: ['IMAGE'] }
+    });
+    const parte = res.candidates?.[0]?.content?.parts?.find(p => p.inlineData);
+    if (parte?.inlineData?.data) {
+      return Buffer.from(parte.inlineData.data, 'base64');
+    }
+    return null;
+  } catch (err) {
+    console.log('⚠️ No se pudo generar avatar con IA (revisa MODELO_IMAGEN):', err.message);
+    return null;
+  }
+}
+
+function obtenerNumeroBot(sock) {
+  const raw = sock.user?.id || '';
+  return raw.split(':')[0].split('@')[0];
+}
+function esMencionAlBot(msg, numeroBot) {
+  const mencionados = msg.message.extendedTextMessage?.contextInfo?.mentionedJid || [];
+  return mencionados.some(j => j.split('@')[0] === numeroBot);
+}
+function debeResponderIA(texto, msg, numeroBot) {
+  if (esMencionAlBot(msg, numeroBot)) return true;
   if (!texto.trim().startsWith('/')) return false;
   const primeraPalabra = texto.trim().split(/\s+/)[0].toLowerCase();
   return !COMANDOS_RESERVADOS.includes(primeraPalabra);
@@ -270,6 +320,21 @@ const FRASES_RANDOM = [
   'Mejor solo que mal acompañado, mejor acompañado que aburrido 😂'
 ];
 function comandoFrase() { return FRASES_RANDOM[Math.floor(Math.random() * FRASES_RANDOM.length)]; }
+
+const FRASES_DESPEDIDA = [
+  'Se fue @NUM... ni el grupo lo va a extrañar mucho la verdad 💀',
+  '@NUM se fugó, seguro fue a buscar personalidad 😂',
+  'Uno menos hueveando por acá, chau @NUM 😏',
+  '@NUM desapareció más rápido que la plata en quincena 💸😂',
+  'Se fue @NUM, ya se extrañaba la paz por acá 😌✌️',
+  '@NUM salió disparado, ni Flash corre así 💀🔥',
+  'Adiós @NUM, no le avises a nadie que se fue, capaz ni notan la diferencia 😂',
+  'Chau @NUM, la puerta queda abierta pero no se ve que la vayas a necesitar de nuevo 👋'
+];
+function comandoDespedidaAleatoria(numero) {
+  const base = FRASES_DESPEDIDA[Math.floor(Math.random() * FRASES_DESPEDIDA.length)];
+  return base.replace('@NUM', `@${numero}`);
+}
 
 async function comandoMeme(sock, jidGrupo) {
   try {
@@ -327,7 +392,6 @@ async function comandoPerfil(sock, jidGrupo, jidUsuario, mencionJid) {
   const texto = `👤 *Perfil de @${numero}*\n📨 Mensajes en el grupo: ${mensajes}\n👑 Admin: ${esAdmin ? 'Sí' : 'No'}`;
   await sock.sendMessage(jidGrupo, { text, mentions: [jidObjetivo] });
 }
-
 async function comandoKick(sock, jidGrupo, jidUsuario, mencionados) {
   if (!(await esAdminGrupo(sock, jidGrupo, jidUsuario))) {
     await sock.sendMessage(jidGrupo, { text: 'Solo los admins del grupo pueden usar este comando causa 🚫' });
@@ -390,6 +454,7 @@ async function comandoCerrarGrupo(sock, jidGrupo, jidUsuario, cerrar) {
     await sock.sendMessage(jidGrupo, { text: 'No pude cambiar la configuración, revisa que el bot sea admin.' });
   }
 }
+
 function generarTextoInfo() {
   const uptimeH = ((Date.now() - estado.inicio) / 3600000).toFixed(1);
   return `🤖 *${NOMBRE_BOT}* — v${VERSION_BOT}
@@ -403,10 +468,10 @@ Escribe /comandos para ver todo lo que puedo hacer.`;
 
 const TEXTO_CREADOR = `👑 Este bot fue creado por *Albert Oficial*, desarrollador de bots de WhatsApp y aplicaciones. 🙌`;
 
-const TEXTO_REGLAS = `╔══════════════════════╗
-          🏆 REGLAMENTO OFICIAL
-                        DEL CLAN 🏆
-╚══════════════════════╝
+const TEXTO_REGLAS = `╔════════════════════════╗
+            🏆 REGLAMENTO OFICIAL
+                          DEL CLAN 🏆
+╚════════════════════════╝
 
 Bienvenido al clan. [STX] OFICIAL
 
@@ -516,7 +581,6 @@ No se permitirá el uso de armas distintas a las mencionadas.
 El incumplimiento de cualquiera de estas reglas ocasionará que el enfrentamiento sea declarado *NO VÁLIDO*.
 
 La escuadra rival será declarada vencedora automáticamente y avanzará a la siguiente ronda.`;
-
 async function procesarMensajeGrupo(sock, msg) {
   const jidGrupo = msg.key.remoteJid;
   const jidUsuario = msg.key.participant || msg.key.remoteJid;
@@ -590,6 +654,18 @@ async function procesarMensajeGrupo(sock, msg) {
       case '/creador': await sock.sendMessage(jidGrupo, { text: TEXTO_CREADOR }); return;
       case '/reglas': await sock.sendMessage(jidGrupo, { text: TEXTO_REGLAS }); return;
       case '/reglaspvp': await sock.sendMessage(jidGrupo, { text: TEXTO_REGLAS_PVP }); return;
+      case '/recordar': {
+        const lista = memoriaPersistente[jidUsuario] || [];
+        if (!lista.length) { await sock.sendMessage(jidGrupo, { text: 'Aún no tengo nada guardado de ti 🤔' }); return; }
+        const resumen = lista.map(m => `👤 ${m.texto}\n🤖 ${m.respuesta}`).join('\n\n');
+        await sock.sendMessage(jidGrupo, { text: `🧠 Esto recuerdo de ti:\n\n${resumen}` });
+        return;
+      }
+      case '/olvidarme': {
+        olvidarUsuario(jidUsuario);
+        await sock.sendMessage(jidGrupo, { text: 'Listo, borré todo lo que recordaba de ti 🗑️' });
+        return;
+      }
       case '/comandos': case '/ayuda': await sock.sendMessage(jidGrupo, { text: TEXTO_AYUDA }); return;
     }
   } catch (err) {
@@ -597,7 +673,8 @@ async function procesarMensajeGrupo(sock, msg) {
     return;
   }
 
-  if (!debeResponderIA(texto)) return;
+  const numeroBot = obtenerNumeroBot(sock);
+  if (!debeResponderIA(texto, msg, numeroBot)) return;
 
   if (esMensajeDeCrisis(texto)) {
     try {
@@ -606,7 +683,7 @@ async function procesarMensajeGrupo(sock, msg) {
   }
 
   try {
-    const consultaLimpia = texto.replace(/^\/\S+\s*/, '').trim() || texto;
+    const consultaLimpia = texto.replace(/@\d+/g, '').replace(/^\/\S+\s*/, '').trim() || texto;
     const notas = `Mensaje de ${nombreContacto} dentro de un grupo de WhatsApp, hay más personas leyendo.` + obtenerContextoCorto(jidUsuario);
     const respuesta = await generarRespuestaIA(consultaLimpia, notas);
     await enviarRespuestaHumanizada(sock, jidGrupo, respuesta, [jidUsuario]);
@@ -626,13 +703,22 @@ function registrarBienvenidasYDespedidas(sock) {
         if (action === 'add') {
           let fotoUrl = null;
           try { fotoUrl = await sock.profilePictureUrl(jidParticipante, 'image'); } catch (err) { fotoUrl = null; }
-          if (!fotoUrl) {
-            fotoUrl = `https://api.dicebear.com/7.x/adventurer/png?seed=${numero}`;
-          }
+
           const texto = `🎉 ¡Bienvenid@ al grupo, @${numero}! Espero la pases chévere por acá 🙌`;
-          await sock.sendMessage(jidGrupo, { image: { url: fotoUrl }, caption: texto, mentions: [jidParticipante] });
+
+          if (fotoUrl) {
+            await sock.sendMessage(jidGrupo, { image: { url: fotoUrl }, caption: texto, mentions: [jidParticipante] });
+          } else {
+            const fotoGenerada = await generarAvatarIA(numero);
+            if (fotoGenerada) {
+              await sock.sendMessage(jidGrupo, { image: fotoGenerada, caption: texto, mentions: [jidParticipante] });
+            } else {
+              const fotoRespaldo = `https://api.dicebear.com/7.x/adventurer/png?seed=${numero}`;
+              await sock.sendMessage(jidGrupo, { image: { url: fotoRespaldo }, caption: texto, mentions: [jidParticipante] });
+            }
+          }
         } else if (action === 'remove') {
-          await sock.sendMessage(jidGrupo, { text: `👋 @${numero} salió del grupo.`, mentions: [jidParticipante] });
+          await sock.sendMessage(jidGrupo, { text: comandoDespedidaAleatoria(numero), mentions: [jidParticipante] });
         } else if (action === 'promote') {
           await sock.sendMessage(jidGrupo, { text: `⭐ @${numero} ahora es admin del grupo.`, mentions: [jidParticipante] });
         } else if (action === 'demote') {

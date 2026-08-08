@@ -14,7 +14,9 @@ const CLAVE_IA_RESPALDO2 = process.env.CLAVE_IA_RESPALDO2;
 const MODELO_PRINCIPAL = 'gemini-3.6-flash';
 const MODELO_RESPALDO = 'gemini-3.6-flash';
 const MODELO_RESPALDO2 = 'gemini-3.6-flash';
-const MODELO_IMAGEN = process.env.MODELO_IMAGEN || 'gemini-2.5-flash-image';
+// Nano Banana 2 — nombre actual del modelo de imágenes de Gemini. Si Google lo vuelve a
+// renombrar, cámbialo con la variable de entorno MODELO_IMAGEN en Render sin tocar el código.
+const MODELO_IMAGEN = process.env.MODELO_IMAGEN || 'gemini-3.1-flash-image';
 const CODIGO_DUEÑO = '2927760128';
 const NOMBRE_BOT = 'Criss Bot';
 const CREADOR = 'Albert Oficial';
@@ -29,11 +31,14 @@ if (!CLAVE_IA_PRINCIPAL) {
   console.log('❌ ALERTA: no se detectó CLAVE_IA_PRINCIPAL en las variables de entorno.');
 }
 if (!CLAVE_IA_RESPALDO) {
-  console.log('⚠️ Aviso: no se detectó CLAVE_IA_RESPALDO (segundo token). El bot seguirá funcionando pero con menos respaldo.');
+  console.log('⚠️ Aviso: no se detectó CLAVE_IA_RESPALDO (segundo token).');
 }
 if (!CLAVE_IA_RESPALDO2) {
-  console.log('⚠️ Aviso: no se detectó CLAVE_IA_RESPALDO2 (tercer token). El bot seguirá funcionando pero con menos respaldo.');
+  console.log('⚠️ Aviso: no se detectó CLAVE_IA_RESPALDO2 (tercer token).');
 }
+// IMPORTANTE: si tus 3 tokens vienen del mismo proyecto/cuenta de Google Cloud,
+// comparten el mismo límite gratis de 20 solicitudes/día por modelo. Para que el
+// respaldo sirva de verdad, cada token debe venir de un proyecto de Google distinto.
 
 const COMANDOS_RESERVADOS = [
   '/porciento', '/shipeo', '/dado', '/moneda', '/8bola', '/frase', '/ranking',
@@ -187,13 +192,11 @@ function programarRecordatorioGrupo(jidGrupo, minutos, texto) {
 let botActivo = true;
 let sockActivo = null;
 
-// ==== MENÚ DE DUEÑO (por código, en chat personal) ====
 const modoJefe = new Map();
 let estiloGlobalExtra = '';
 function esCodigoDueño(texto) {
   return texto.trim() === CODIGO_DUEÑO;
 }
-// ==== FIN MENÚ DE DUEÑO ====
 
 function calcularTiempoTecleo(texto) {
   const ms = texto.length * 35;
@@ -211,7 +214,6 @@ async function enviarRespuestaHumanizada(sock, jid, texto, mentions) {
   }
 }
 
-// ==== IA con hasta 3 tokens de respaldo ====
 function construirClientesIA() {
   const clientes = [];
   if (CLAVE_IA_PRINCIPAL) clientes.push({ ai: new GoogleGenAI({ apiKey: CLAVE_IA_PRINCIPAL }), modelo: MODELO_PRINCIPAL, nombre: 'principal' });
@@ -258,7 +260,6 @@ async function generarRespuestaIA(prompt, notasExtra) {
   }
   throw new Error('No hay ningún token de IA configurado');
 }
-// ==== FIN IA ====
 
 async function generarAvatarIA(numero) {
   if (CLIENTES_IA.length === 0) return null;
@@ -279,7 +280,6 @@ async function generarAvatarIA(numero) {
   }
 }
 
-// ==== Detección de mención al bot (compatible con números normales y con LID) ====
 function obtenerIdentificadoresBot(sock) {
   const ids = new Set();
   const rawId = sock.user?.id || '';
@@ -302,6 +302,17 @@ function debeResponderIA(texto, msg, identificadoresBot) {
   if (!texto.trim().startsWith('/')) return false;
   const primeraPalabra = texto.trim().split(/\s+/)[0].toLowerCase();
   return !COMANDOS_RESERVADOS.includes(primeraPalabra);
+}
+
+// Normaliza un participante de group-participants.update: en versiones nuevas de
+// Baileys llega como objeto { id, phoneNumber, admin } en vez de un string plano.
+function normalizarParticipante(participanteRaw) {
+  if (typeof participanteRaw === 'string') {
+    return { jid: participanteRaw, numero: participanteRaw.split('@')[0] };
+  }
+  const jid = participanteRaw?.id || participanteRaw?.jid || participanteRaw?.phoneNumber || '';
+  const numero = (participanteRaw?.phoneNumber || jid || '').split('@')[0];
+  return { jid, numero };
 }
 function extraerTipoYMencion(partes, mencionados) {
   const tipo = partes.filter(p => !p.startsWith('@')).join(' ').trim();
@@ -364,19 +375,23 @@ function comandoDespedidaAleatoria(numero) {
   return base.replace('@NUM', `@${numero}`);
 }
 
-// Meme en español: usa un subreddit hispanohablante en vez del genérico en inglés
+// Meme en español, con varios subreddits de respaldo por si uno falla o no tiene posts
+const SUBREDDITS_MEME_ES = ['memesenespanol', 'chistes', 'humor'];
 async function comandoMeme(sock, jidGrupo) {
-  try {
-    const res = await fetch('https://meme-api.com/gimme/memesenespanol');
-    const data = await res.json();
-    if (data?.url) {
-      await sock.sendMessage(jidGrupo, { image: { url: data.url }, caption: data.title || '😂' });
-    } else {
-      await sock.sendMessage(jidGrupo, { text: 'No pude traer un meme ahorita 😅' });
+  for (const sub of SUBREDDITS_MEME_ES) {
+    try {
+      const res = await fetch(`https://meme-api.com/gimme/${sub}`);
+      const data = await res.json();
+      if (data?.url && !data.nsfw) {
+        await sock.sendMessage(jidGrupo, { image: { url: data.url }, caption: data.title || '😂' });
+        return;
+      }
+      console.log(`⚠️ Meme sin url válida en r/${sub}:`, JSON.stringify(data).slice(0, 200));
+    } catch (err) {
+      console.log(`⚠️ Meme falló en r/${sub}:`, err.message);
     }
-  } catch (err) {
-    await sock.sendMessage(jidGrupo, { text: 'No pude traer un meme ahorita 😅' });
   }
+  await sock.sendMessage(jidGrupo, { text: 'No pude traer un meme ahorita 😅' });
 }
 
 async function comandoEncuesta(sock, jidGrupo, textoCompleto) {
@@ -642,7 +657,6 @@ async function procesarComandoJefe(sock, remitente, texto) {
     return;
   }
 
-  // Cualquier otra frase se guarda como nueva directiva de tono/estilo global
   estiloGlobalExtra = texto.trim();
   await sock.sendMessage(remitente, { text: `✅ Listo jefe, actualicé mi forma de expresarme en TODOS los grupos:\n"${estiloGlobalExtra}"\n\n(escribe "restaura" para volver a mi forma original)` });
 }
@@ -760,10 +774,11 @@ async function procesarMensajeGrupo(sock, msg, identificadoresBot) {
 
 function registrarBienvenidasYDespedidas(sock) {
   sock.ev.on('group-participants.update', async (evento) => {
-    console.log('📥 Evento de participantes recibido:', evento.action, evento.participants);
+    console.log('📥 Evento de participantes recibido:', evento.action);
     const { id: jidGrupo, participants, action } = evento;
-    for (const jidParticipante of participants) {
-      const numero = jidParticipante.split('@')[0];
+    for (const participanteRaw of participants) {
+      const { jid: jidParticipante, numero } = normalizarParticipante(participanteRaw);
+      if (!jidParticipante) { console.log('⚠️ Participante sin jid válido, se omite:', participanteRaw); continue; }
       try {
         if (action === 'add') {
           let fotoUrl = null;
@@ -860,7 +875,6 @@ async function iniciarBot() {
 
     almacenMensajes.set(msg.key.id, msg.message);
 
-    // ==== Chat personal: SOLO responde al código de dueño o dentro del menú ====
     if (!remitente.endsWith('@g.us')) {
       if (remitente.endsWith('@s.whatsapp.net')) {
         const textoPersonal = (msg.message.conversation || msg.message.extendedTextMessage?.text || '').trim();
@@ -876,9 +890,8 @@ async function iniciarBot() {
           return;
         }
       }
-      return; // cualquier otro chat personal se ignora por completo
+      return;
     }
-    // ==== Fin chat personal ====
 
     if (!botActivo) return;
 
@@ -967,8 +980,7 @@ app.get('/status', (req, res) => {
     uptimeSegundos: Math.floor((Date.now() - estado.inicio) / 1000),
     mensajesRecibidos: estado.mensajesRecibidos, mensajesEnviados: estado.mensajesEnviados,
     intentosReconexion: estado.intentosReconexion,
-    cuotaUsada: contadorCuota.usados, cuotaLimite: LIMITE_DIARIO_ESTIMADO,
-    urlRender: process.env.RENDER_EXTERNAL_URL || null
+    cuotaUsada: contadorCuota.usados, cuotaLimite: LIMITE_DIARIO_ESTIMADO
   });
 });
 
@@ -1026,13 +1038,6 @@ app.get('/', (req, res) => {
     border-radius: 10px; overflow: hidden; border: 1px solid rgba(160,90,255,0.2); }
   .barra-relleno { height: 100%; background: linear-gradient(90deg, #00f7ff, #a24bff); box-shadow: 0 0 10px #a24bff; }
 
-  .render-link {
-    margin-top: 40px; padding: 14px 30px; border-radius: 40px; border: 1px solid #00f7ff;
-    color: #00f7ff; text-decoration: none; font-family: 'Orbitron', sans-serif; font-size: 13px;
-    letter-spacing: 2px; box-shadow: 0 0 18px rgba(0,247,255,0.25); transition: all .2s;
-  }
-  .render-link:hover { background: rgba(0,247,255,0.1); box-shadow: 0 0 26px rgba(0,247,255,0.5); }
-
   .cat-titulo { font-family: 'Orbitron', sans-serif; font-size: 14px; letter-spacing: 2px; color: #ff2ee6;
     margin: 26px 0 12px; text-transform: uppercase; width: 100%; max-width: 900px; }
   .cmd-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px;
@@ -1060,15 +1065,13 @@ app.get('/', (req, res) => {
     <div class="card"><div class="valor" id="reint">0</div><div class="etiqueta">Reconexiones</div></div>
   </div>
 
-  <div class="seccion">Cuota de IA hoy</div>
+  <div class="seccion">Cuota de IA hoy (contador interno del bot)</div>
   <div class="grid">
     <div class="card" style="grid-column: 1 / -1">
       <div class="valor" id="cuotaTexto">0 / 0</div>
       <div class="barra-fondo" style="margin-top:14px"><div class="barra-relleno" id="cuotaBarra" style="width:0%"></div></div>
     </div>
   </div>
-
-  <div id="linkRenderCont"></div>
 
   <div class="seccion" style="margin-top:50px">Comandos disponibles</div>
   ${generarHtmlComandos()}
@@ -1093,12 +1096,6 @@ app.get('/', (req, res) => {
       document.getElementById('cuotaTexto').textContent = d.cuotaUsada + ' / ' + d.cuotaLimite;
       const pct = Math.min(100, Math.round((d.cuotaUsada / d.cuotaLimite) * 100));
       document.getElementById('cuotaBarra').style.width = pct + '%';
-
-      const contLink = document.getElementById('linkRenderCont');
-      if (d.urlRender && !contLink.dataset.hecho) {
-        contLink.innerHTML = '<a class="render-link" href="' + d.urlRender + '" target="_blank">🔗 ' + d.urlRender + '</a>';
-        contLink.dataset.hecho = '1';
-      }
     }
     setInterval(actualizar, 3000);
     actualizar();

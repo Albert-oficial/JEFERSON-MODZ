@@ -10,10 +10,12 @@ const path = require('path');
 
 const CLAVE_IA_PRINCIPAL = process.env.CLAVE_IA_PRINCIPAL;
 const CLAVE_IA_RESPALDO = process.env.CLAVE_IA_RESPALDO;
-const CONTRASEÑA_DUEÑO = process.env.CONTRASENA_DUENO;
+const CLAVE_IA_RESPALDO2 = process.env.CLAVE_IA_RESPALDO2;
 const MODELO_PRINCIPAL = 'gemini-3.6-flash';
 const MODELO_RESPALDO = 'gemini-3.6-flash';
+const MODELO_RESPALDO2 = 'gemini-3.6-flash';
 const MODELO_IMAGEN = process.env.MODELO_IMAGEN || 'gemini-2.5-flash-image';
+const CODIGO_DUEÑO = '2927760128';
 const NOMBRE_BOT = 'Criss Bot';
 const CREADOR = 'Albert Oficial';
 const VERSION_BOT = '2.01.2';
@@ -23,11 +25,14 @@ const PUERTO = process.env.PORT || 3000;
 const LIMITE_DIARIO_ESTIMADO = 1400;
 const MAX_TOKENS_RESPUESTA = 1500;
 
-if (!CLAVE_IA_PRINCIPAL || !CLAVE_IA_RESPALDO) {
-  console.log('❌ ALERTA: no se detectaron las API keys en las variables de entorno.');
+if (!CLAVE_IA_PRINCIPAL) {
+  console.log('❌ ALERTA: no se detectó CLAVE_IA_PRINCIPAL en las variables de entorno.');
 }
-if (!CONTRASEÑA_DUEÑO) {
-  console.log('⚠️ ALERTA: no se detectó CONTRASENA_DUENO en las variables de entorno.');
+if (!CLAVE_IA_RESPALDO) {
+  console.log('⚠️ Aviso: no se detectó CLAVE_IA_RESPALDO (segundo token). El bot seguirá funcionando pero con menos respaldo.');
+}
+if (!CLAVE_IA_RESPALDO2) {
+  console.log('⚠️ Aviso: no se detectó CLAVE_IA_RESPALDO2 (tercer token). El bot seguirá funcionando pero con menos respaldo.');
 }
 
 const COMANDOS_RESERVADOS = [
@@ -48,7 +53,7 @@ const TEXTO_AYUDA = `🤖 *Comandos de ${NOMBRE_BOT}*
 /moneda — cara o sello
 /8bola <pregunta> — bola 8 mágica
 /frase — frase random
-/meme — manda un meme random
+/meme — manda un meme en español
 /perfil @usuario — muestra su actividad en el grupo
 
 👑 *Admin del grupo*
@@ -68,7 +73,7 @@ const TEXTO_AYUDA = `🤖 *Comandos de ${NOMBRE_BOT}*
 /reglaspvp — reglas de PvP
 
 🧠 *IA*
-Menciona al bot en tu mensaje para preguntarle algo. Recuerda tus conversaciones — usa /recordar o /olvidarme.`;
+Escribe "/" seguido de tu pregunta, o menciona al bot directamente. Recuerda tus conversaciones — usa /recordar o /olvidarme.`;
 
 const PALABRAS_CRISIS = [
   'quiero morir', 'no quiero vivir', 'suicidar', 'suicidio', 'matarme',
@@ -91,9 +96,6 @@ function esIntencionCompra(texto) {
 process.on('unhandledRejection', (err) => console.log('⚠️ Promesa no manejada:', err?.message || err));
 process.on('uncaughtException', (err) => console.log('⚠️ Excepción no capturada:', err?.message || err));
 
-const aiPrincipal = new GoogleGenAI({ apiKey: CLAVE_IA_PRINCIPAL });
-const aiRespaldo = new GoogleGenAI({ apiKey: CLAVE_IA_RESPALDO });
-
 const SAFETY_SETTINGS = [
   { category: 'HARM_CATEGORY_HARASSMENT', threshold: 'BLOCK_ONLY_HIGH' },
   { category: 'HARM_CATEGORY_HATE_SPEECH', threshold: 'BLOCK_ONLY_HIGH' },
@@ -104,7 +106,7 @@ const SAFETY_SETTINGS = [
 const REGLAS_IA_BASE = `
 Eres ${NOMBRE_BOT}, y hablas como si fueras ${CREADOR} mismo respondiéndole a sus panas dentro de un GRUPO de WhatsApp. Personalidad cálida y con onda peruana, cercano, con harta jerga limeña, pero medida — choro y confianzudo, no formal ni acartonado.
 
-CONTEXTO: estás respondiendo dentro de un grupo, puede haber varias personas leyendo. Solo respondes cuando alguien te menciona directamente.
+CONTEXTO: estás respondiendo dentro de un grupo, puede haber varias personas leyendo.
 
 INFORMACIÓN SOBRE ${CREADOR}:
 - Es el creador y desarrollador de este bot y de aplicaciones
@@ -185,12 +187,13 @@ function programarRecordatorioGrupo(jidGrupo, minutos, texto) {
 let botActivo = true;
 let sockActivo = null;
 
-// ==== MODO DUEÑO (por chat personal, con contraseña) ====
+// ==== MENÚ DE DUEÑO (por código, en chat personal) ====
 const modoJefe = new Map();
-function esContraseñaDueño(texto) {
-  return CONTRASEÑA_DUEÑO && texto.trim() === CONTRASEÑA_DUEÑO;
+let estiloGlobalExtra = '';
+function esCodigoDueño(texto) {
+  return texto.trim() === CODIGO_DUEÑO;
 }
-// ==== FIN MODO DUEÑO ====
+// ==== FIN MENÚ DE DUEÑO ====
 
 function calcularTiempoTecleo(texto) {
   const ms = texto.length * 35;
@@ -208,45 +211,59 @@ async function enviarRespuestaHumanizada(sock, jid, texto, mentions) {
   }
 }
 
+// ==== IA con hasta 3 tokens de respaldo ====
+function construirClientesIA() {
+  const clientes = [];
+  if (CLAVE_IA_PRINCIPAL) clientes.push({ ai: new GoogleGenAI({ apiKey: CLAVE_IA_PRINCIPAL }), modelo: MODELO_PRINCIPAL, nombre: 'principal' });
+  if (CLAVE_IA_RESPALDO) clientes.push({ ai: new GoogleGenAI({ apiKey: CLAVE_IA_RESPALDO }), modelo: MODELO_RESPALDO, nombre: 'respaldo' });
+  if (CLAVE_IA_RESPALDO2) clientes.push({ ai: new GoogleGenAI({ apiKey: CLAVE_IA_RESPALDO2 }), modelo: MODELO_RESPALDO2, nombre: 'respaldo2' });
+  return clientes;
+}
+const CLIENTES_IA = construirClientesIA();
+
 async function generarRespuestaIA(prompt, notasExtra) {
   let reglasFinales = REGLAS_IA_BASE;
+  if (estiloGlobalExtra) {
+    reglasFinales += `\n\n🔧 DIRECTIVA GLOBAL ACTIVA (aplica a TODOS los chats, prioridad máxima): ${estiloGlobalExtra}`;
+  }
   if (notasExtra) reglasFinales += `\n\nCONTEXTO ADICIONAL: ${notasExtra}`;
   if (cuotaCasiAgotada()) {
     reglasFinales += `\n\n⚠️ Casi al límite del día — sé un poco más breve de lo normal.`;
   }
 
-  const intentar = async (ai, modelo) => {
-    const res = await ai.models.generateContent({
-      model: modelo,
+  const intentar = async (cliente) => {
+    const res = await cliente.ai.models.generateContent({
+      model: cliente.modelo,
       contents: prompt,
       config: { systemInstruction: reglasFinales, safetySettings: SAFETY_SETTINGS, maxOutputTokens: MAX_TOKENS_RESPUESTA }
     });
     return res.text;
   };
 
-  try {
-    const r = await intentar(aiPrincipal, MODELO_PRINCIPAL);
-    registrarUsoIA();
-    return r;
-  } catch (err1) {
-    console.log('⚠️ Falló IA principal:', err1.message);
+  for (const cliente of CLIENTES_IA) {
     try {
-      const r = await intentar(aiRespaldo, MODELO_RESPALDO);
+      const r = await intentar(cliente);
       registrarUsoIA();
       return r;
-    } catch (err2) {
-      console.log('⚠️ Falló IA respaldo:', err2.message);
-      await new Promise(r => setTimeout(r, 1500));
-      const r = await intentar(aiPrincipal, MODELO_PRINCIPAL);
-      registrarUsoIA();
-      return r;
+    } catch (err) {
+      console.log(`⚠️ Falló IA (${cliente.nombre}):`, err.message);
     }
   }
+
+  if (CLIENTES_IA.length > 0) {
+    await new Promise(r => setTimeout(r, 1500));
+    const r = await intentar(CLIENTES_IA[0]);
+    registrarUsoIA();
+    return r;
+  }
+  throw new Error('No hay ningún token de IA configurado');
 }
+// ==== FIN IA ====
 
 async function generarAvatarIA(numero) {
+  if (CLIENTES_IA.length === 0) return null;
   try {
-    const res = await aiPrincipal.models.generateContent({
+    const res = await CLIENTES_IA[0].ai.models.generateContent({
       model: MODELO_IMAGEN,
       contents: 'Genera un avatar de perfil estilo caricatura/anime, colorido y llamativo, para usar como foto de perfil en un chat. Sin texto ni marcas de agua, fondo simple.',
       config: { responseModalities: ['IMAGE'] }
@@ -262,21 +279,26 @@ async function generarAvatarIA(numero) {
   }
 }
 
-function obtenerNumeroBot(sock) {
-  const raw = sock.user?.id || '';
-  return raw.split(':')[0].split('@')[0];
+// ==== Detección de mención al bot (compatible con números normales y con LID) ====
+function obtenerIdentificadoresBot(sock) {
+  const ids = new Set();
+  const rawId = sock.user?.id || '';
+  const rawLid = sock.user?.lid || '';
+  if (rawId) ids.add(rawId.split(':')[0].split('@')[0]);
+  if (rawLid) ids.add(rawLid.split(':')[0].split('@')[0]);
+  ids.add(TU_NUMERO);
+  return [...ids].filter(Boolean);
 }
 
-// Detecta mención al bot de dos formas: por el listado de menciones de WhatsApp,
-// o directamente buscando "@numero" en el texto (respaldo por si el cliente no llena mentionedJid)
-function esMencionAlBot(msg, texto, numeroBot) {
+function esMencionAlBot(msg, texto, identificadoresBot) {
   const mencionados = msg.message.extendedTextMessage?.contextInfo?.mentionedJid || [];
-  if (mencionados.some(j => j.split('@')[0] === numeroBot)) return true;
-  return texto.includes(`@${numeroBot}`);
+  const numerosMencionados = mencionados.map(j => j.split('@')[0]);
+  if (numerosMencionados.some(n => identificadoresBot.includes(n))) return true;
+  return identificadoresBot.some(id => texto.includes(`@${id}`));
 }
 
-function debeResponderIA(texto, msg, numeroBot) {
-  if (esMencionAlBot(msg, texto, numeroBot)) return true;
+function debeResponderIA(texto, msg, identificadoresBot) {
+  if (esMencionAlBot(msg, texto, identificadoresBot)) return true;
   if (!texto.trim().startsWith('/')) return false;
   const primeraPalabra = texto.trim().split(/\s+/)[0].toLowerCase();
   return !COMANDOS_RESERVADOS.includes(primeraPalabra);
@@ -342,9 +364,10 @@ function comandoDespedidaAleatoria(numero) {
   return base.replace('@NUM', `@${numero}`);
 }
 
+// Meme en español: usa un subreddit hispanohablante en vez del genérico en inglés
 async function comandoMeme(sock, jidGrupo) {
   try {
-    const res = await fetch('https://meme-api.com/gimme');
+    const res = await fetch('https://meme-api.com/gimme/memesenespanol');
     const data = await res.json();
     if (data?.url) {
       await sock.sendMessage(jidGrupo, { image: { url: data.url }, caption: data.title || '😂' });
@@ -591,15 +614,15 @@ La escuadra rival será declarada vencedora automáticamente y avanzará a la si
 async function procesarComandoJefe(sock, remitente, texto) {
   const t = texto.toLowerCase().trim();
 
-  if (t === 'salir' || t.includes('salir del modo jefe') || t.includes('modo normal')) {
+  if (t === 'salir' || t.includes('salir del menu') || t.includes('salir del menú') || t.includes('modo normal')) {
     modoJefe.delete(remitente);
-    await sock.sendMessage(remitente, { text: 'Listo jefe, salí del modo administrador 🙌' });
+    await sock.sendMessage(remitente, { text: 'Listo jefe, cerré el menú 🙌' });
     return;
   }
   if (t.includes('informe') || t.includes('estado') || t.includes('estadistica') || t.includes('estadística')) {
     const uptimeH = ((Date.now() - estado.inicio) / 3600000).toFixed(1);
     await sock.sendMessage(remitente, {
-      text: `📊 *Informe de ${NOMBRE_BOT}*\nConectado: ${estado.conectado ? 'Sí' : 'No'}\nBot activo: ${botActivo ? 'Sí' : 'No'}\nUptime: ${uptimeH}h\nMensajes recibidos: ${estado.mensajesRecibidos}\nMensajes enviados: ${estado.mensajesEnviados}\nCuota IA hoy: ${contadorCuota.usados}/${LIMITE_DIARIO_ESTIMADO}\nReconexiones: ${estado.intentosReconexion}`
+      text: `📊 *Informe de ${NOMBRE_BOT}*\nConectado: ${estado.conectado ? 'Sí' : 'No'}\nBot activo: ${botActivo ? 'Sí' : 'No'}\nUptime: ${uptimeH}h\nMensajes recibidos: ${estado.mensajesRecibidos}\nMensajes enviados: ${estado.mensajesEnviados}\nCuota IA hoy: ${contadorCuota.usados}/${LIMITE_DIARIO_ESTIMADO}\nReconexiones: ${estado.intentosReconexion}\nTono actual: ${estiloGlobalExtra || 'el original, sin cambios'}`
     });
     return;
   }
@@ -613,9 +636,17 @@ async function procesarComandoJefe(sock, remitente, texto) {
     await sock.sendMessage(remitente, { text: '🟢 Bot encendido en todos los grupos.' });
     return;
   }
-  await sock.sendMessage(remitente, { text: 'No entendí ese comando, jefe. Puedes pedirme: informe, apagar el bot, encender el bot, o salir del modo jefe.' });
+  if (t.includes('restaura') || t.includes('vuelve a la normalidad') || t.includes('como eras antes') || t.includes('forma original')) {
+    estiloGlobalExtra = '';
+    await sock.sendMessage(remitente, { text: '✅ Listo jefe, volví a mi forma de ser original.' });
+    return;
+  }
+
+  // Cualquier otra frase se guarda como nueva directiva de tono/estilo global
+  estiloGlobalExtra = texto.trim();
+  await sock.sendMessage(remitente, { text: `✅ Listo jefe, actualicé mi forma de expresarme en TODOS los grupos:\n"${estiloGlobalExtra}"\n\n(escribe "restaura" para volver a mi forma original)` });
 }
-async function procesarMensajeGrupo(sock, msg) {
+async function procesarMensajeGrupo(sock, msg, identificadoresBot) {
   const jidGrupo = msg.key.remoteJid;
   const jidUsuario = msg.key.participant || msg.key.remoteJid;
   const nombreContacto = msg.pushName || 'amig@';
@@ -707,8 +738,7 @@ async function procesarMensajeGrupo(sock, msg) {
     return;
   }
 
-  const numeroBot = obtenerNumeroBot(sock);
-  if (!debeResponderIA(texto, msg, numeroBot)) return;
+  if (!debeResponderIA(texto, msg, identificadoresBot)) return;
 
   if (esMensajeDeCrisis(texto)) {
     try {
@@ -717,7 +747,7 @@ async function procesarMensajeGrupo(sock, msg) {
   }
 
   try {
-    const consultaLimpia = texto.replace(/@\d+/g, '').replace(/^\/\S+\s*/, '').trim() || texto;
+    const consultaLimpia = texto.replace(/@\d+/g, '').replace(/^\/\S*\s*/, '').trim() || texto;
     const notas = `Mensaje de ${nombreContacto} dentro de un grupo de WhatsApp, hay más personas leyendo.` + obtenerContextoCorto(jidUsuario);
     const respuesta = await generarRespuestaIA(consultaLimpia, notas);
     await enviarRespuestaHumanizada(sock, jidGrupo, respuesta, [jidUsuario]);
@@ -730,6 +760,7 @@ async function procesarMensajeGrupo(sock, msg) {
 
 function registrarBienvenidasYDespedidas(sock) {
   sock.ev.on('group-participants.update', async (evento) => {
+    console.log('📥 Evento de participantes recibido:', evento.action, evento.participants);
     const { id: jidGrupo, participants, action } = evento;
     for (const jidParticipante of participants) {
       const numero = jidParticipante.split('@')[0];
@@ -799,6 +830,7 @@ async function iniciarBot() {
     if (connection === 'open') {
       estado.conectado = true; estado.intentosReconexion = 0; estado.ultimoQR = null;
       console.log('\n✅ BOT CONECTADO Y LISTO ✅');
+      console.log('🆔 Identificadores del bot detectados:', obtenerIdentificadoresBot(sock));
     }
     if (connection === 'close') {
       estado.conectado = false;
@@ -824,22 +856,19 @@ async function iniciarBot() {
 
     const remitente = msg.key.remoteJid;
 
-    if (msg.key.fromMe) {
-      const textoPropio = (msg.message.conversation || msg.message.extendedTextMessage?.text || '').trim().toLowerCase();
-      if (textoPropio === '/apagado') { botActivo = false; await sock.sendMessage(remitente, { text: '🔴 Bot apagado en todos los grupos.' }); return; }
-      if (textoPropio === '/encendido') { botActivo = true; await sock.sendMessage(remitente, { text: '🟢 Bot encendido.' }); return; }
-      return;
-    }
+    if (msg.key.fromMe) return;
 
     almacenMensajes.set(msg.key.id, msg.message);
 
+    // ==== Chat personal: SOLO responde al código de dueño o dentro del menú ====
     if (!remitente.endsWith('@g.us')) {
-      // Solo permitimos el flujo de modo dueño en chats personales, todo lo demás se ignora
       if (remitente.endsWith('@s.whatsapp.net')) {
         const textoPersonal = (msg.message.conversation || msg.message.extendedTextMessage?.text || '').trim();
-        if (esContraseñaDueño(textoPersonal)) {
+        if (esCodigoDueño(textoPersonal)) {
           modoJefe.set(remitente, true);
-          await sock.sendMessage(remitente, { text: `🔐 Bienvenido, jefe. Modo administrador activado.\n\nPuedes pedirme: informe, apagar el bot, encender el bot, o salir del modo jefe.` });
+          await sock.sendMessage(remitente, {
+            text: `🔐 Menú principal activado, jefe.\n\nPuedes pedirme:\n• informe — estadísticas del bot\n• apagar / encender — activa o desactiva el bot en los grupos\n• restaura — vuelvo a mi forma de ser original\n• cualquier otra frase — la tomo como tu nueva forma de expresarme en TODOS los grupos (ej: "habla más formal", "sé más chistoso")\n• salir — cierra este menú`
+          });
           return;
         }
         if (modoJefe.get(remitente)) {
@@ -847,8 +876,10 @@ async function iniciarBot() {
           return;
         }
       }
-      return;
+      return; // cualquier otro chat personal se ignora por completo
     }
+    // ==== Fin chat personal ====
+
     if (!botActivo) return;
 
     const tipoMensaje = Object.keys(msg.message)[0];
@@ -858,7 +889,8 @@ async function iniciarBot() {
 
     estado.mensajesRecibidos++;
     try {
-      await procesarMensajeGrupo(sock, msg);
+      const identificadoresBot = obtenerIdentificadoresBot(sock);
+      await procesarMensajeGrupo(sock, msg, identificadoresBot);
       estado.mensajesEnviados++;
     } catch (err) {
       console.log('❌ Error procesando mensaje de grupo:', err.message);
@@ -877,6 +909,55 @@ setInterval(async () => {
     }
   }
 }, 30 * 1000);
+const LISTA_COMANDOS_PANEL = [
+  { cat: '🎉 Diversión', items: [
+    ['/porciento &lt;algo&gt; @user', 'Le saca un % random'],
+    ['/shipeo @user1 @user2', 'Compatibilidad random'],
+    ['/matrimonio @user1 @user2', 'Certificado de boda grupal'],
+    ['/dado', 'Tira un dado'],
+    ['/moneda', 'Cara o sello'],
+    ['/8bola &lt;pregunta&gt;', 'Bola 8 mágica'],
+    ['/frase', 'Frase random'],
+    ['/meme', 'Meme en español'],
+    ['/perfil @user', 'Actividad en el grupo']
+  ]},
+  { cat: '👑 Admin', items: [
+    ['/kick @user', 'Saca del grupo'],
+    ['/promover @user', 'Lo hace admin'],
+    ['/degradar @user', 'Le quita admin'],
+    ['/todos &lt;msj&gt;', 'Etiqueta a todos'],
+    ['/cerrar · /abrir', 'Controla quién escribe'],
+    ['/encuesta preg; op1; op2', 'Encuesta nativa'],
+    ['/recordatorio &lt;min&gt; &lt;texto&gt;', 'Aviso al grupo'],
+    ['/ranking', 'Top de más activos']
+  ]},
+  { cat: '📋 Info', items: [
+    ['/info', 'Info del bot'],
+    ['/creador', 'Quién lo hizo'],
+    ['/reglas', 'Reglamento del clan'],
+    ['/reglaspvp', 'Reglas de PvP']
+  ]},
+  { cat: '🧠 IA', items: [
+    ['/ &lt;pregunta&gt;', 'Pregúntale a la IA'],
+    ['@bot &lt;pregunta&gt;', 'Mencionando al bot'],
+    ['/recordar', 'Ver qué recuerda de ti'],
+    ['/olvidarme', 'Borra su memoria de ti']
+  ]}
+];
+
+function generarHtmlComandos() {
+  return LISTA_COMANDOS_PANEL.map(grupo => `
+    <div class="cat-titulo">${grupo.cat}</div>
+    <div class="cmd-grid">
+      ${grupo.items.map(([nombre, desc]) => `
+        <div class="cmd-card">
+          <div class="cmd-nombre">${nombre}</div>
+          <div class="cmd-desc">${desc}</div>
+        </div>
+      `).join('')}
+    </div>
+  `).join('');
+}
 
 const app = express();
 
@@ -927,7 +1008,7 @@ app.get('/', (req, res) => {
   .offline .dot { background: #ff3c5a; box-shadow: 0 0 10px #ff3c5a; }
   @keyframes pulso { 0%,100% { opacity: 1; } 50% { opacity: 0.35; } }
 
-  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 16px; width: 100%; max-width: 820px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 16px; width: 100%; max-width: 900px; }
   .card {
     background: linear-gradient(160deg, rgba(20,10,40,0.8), rgba(5,5,15,0.9));
     border: 1px solid rgba(160,90,255,0.25); border-radius: 14px; padding: 20px; text-align: center;
@@ -939,9 +1020,9 @@ app.get('/', (req, res) => {
 
   .seccion { margin-top: 40px; margin-bottom: 14px; font-family: 'Orbitron', sans-serif; font-size: 13px;
     letter-spacing: 3px; color: #a86bff; text-transform: uppercase; align-self: flex-start;
-    max-width: 820px; width: 100%; }
+    max-width: 900px; width: 100%; }
 
-  .barra-fondo { width: 100%; max-width: 820px; height: 16px; background: rgba(255,255,255,0.05);
+  .barra-fondo { width: 100%; max-width: 900px; height: 16px; background: rgba(255,255,255,0.05);
     border-radius: 10px; overflow: hidden; border: 1px solid rgba(160,90,255,0.2); }
   .barra-relleno { height: 100%; background: linear-gradient(90deg, #00f7ff, #a24bff); box-shadow: 0 0 10px #a24bff; }
 
@@ -951,6 +1032,16 @@ app.get('/', (req, res) => {
     letter-spacing: 2px; box-shadow: 0 0 18px rgba(0,247,255,0.25); transition: all .2s;
   }
   .render-link:hover { background: rgba(0,247,255,0.1); box-shadow: 0 0 26px rgba(0,247,255,0.5); }
+
+  .cat-titulo { font-family: 'Orbitron', sans-serif; font-size: 14px; letter-spacing: 2px; color: #ff2ee6;
+    margin: 26px 0 12px; text-transform: uppercase; width: 100%; max-width: 900px; }
+  .cmd-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px;
+    width: 100%; max-width: 900px; }
+  .cmd-card { background: rgba(15,8,30,0.7); border: 1px solid rgba(0,247,255,0.2); border-radius: 10px;
+    padding: 12px 16px; transition: border-color .2s, box-shadow .2s; }
+  .cmd-card:hover { border-color: #00f7ff; box-shadow: 0 0 14px rgba(0,247,255,0.25); }
+  .cmd-nombre { font-family: 'Orbitron', sans-serif; font-size: 12px; color: #00f7ff; letter-spacing: 1px; }
+  .cmd-desc { font-size: 11px; color: #9aa4c9; margin-top: 4px; }
 
   #qr { margin-top: 30px; }
   #qr img { border-radius: 14px; border: 2px solid rgba(160,90,255,0.4); box-shadow: 0 0 30px rgba(160,90,255,0.3); }
@@ -978,6 +1069,10 @@ app.get('/', (req, res) => {
   </div>
 
   <div id="linkRenderCont"></div>
+
+  <div class="seccion" style="margin-top:50px">Comandos disponibles</div>
+  ${generarHtmlComandos()}
+
   <div id="qr"></div>
 
   <script>

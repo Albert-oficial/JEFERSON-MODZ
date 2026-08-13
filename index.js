@@ -14,8 +14,6 @@ const CLAVE_IA_RESPALDO2 = process.env.CLAVE_IA_RESPALDO2;
 const MODELO_PRINCIPAL = 'gemini-3.6-flash';
 const MODELO_RESPALDO = 'gemini-3.6-flash';
 const MODELO_RESPALDO2 = 'gemini-3.6-flash';
-// Nano Banana 2 — nombre actual del modelo de imágenes de Gemini. Si Google lo vuelve a
-// renombrar, cámbialo con la variable de entorno MODELO_IMAGEN en Render sin tocar el código.
 const MODELO_IMAGEN = process.env.MODELO_IMAGEN || 'gemini-3.1-flash-image';
 const CODIGO_DUEÑO = '2927760128';
 const NOMBRE_BOT = 'Criss Bot';
@@ -25,7 +23,7 @@ const TU_NUMERO = '51996399291';
 const JID_DUEÑO = `${TU_NUMERO}@s.whatsapp.net`;
 const PUERTO = process.env.PORT || 3000;
 const LIMITE_DIARIO_ESTIMADO = 1400;
-const MAX_TOKENS_RESPUESTA = 1500;
+const MAX_TOKENS_RESPUESTA = 500;
 
 if (!CLAVE_IA_PRINCIPAL) {
   console.log('❌ ALERTA: no se detectó CLAVE_IA_PRINCIPAL en las variables de entorno.');
@@ -36,9 +34,8 @@ if (!CLAVE_IA_RESPALDO) {
 if (!CLAVE_IA_RESPALDO2) {
   console.log('⚠️ Aviso: no se detectó CLAVE_IA_RESPALDO2 (tercer token).');
 }
-// IMPORTANTE: si tus 3 tokens vienen del mismo proyecto/cuenta de Google Cloud,
-// comparten el mismo límite gratis de 20 solicitudes/día por modelo. Para que el
-// respaldo sirva de verdad, cada token debe venir de un proyecto de Google distinto.
+// Recuerda: si los 3 tokens vienen del mismo proyecto de Google Cloud, comparten
+// el mismo límite gratis de 20 solicitudes/día por modelo.
 
 const COMANDOS_RESERVADOS = [
   '/porciento', '/shipeo', '/dado', '/moneda', '/8bola', '/frase', '/ranking',
@@ -78,7 +75,7 @@ const TEXTO_AYUDA = `🤖 *Comandos de ${NOMBRE_BOT}*
 /reglaspvp — reglas de PvP
 
 🧠 *IA*
-Escribe "/" seguido de tu pregunta, o menciona al bot directamente. Recuerda tus conversaciones — usa /recordar o /olvidarme.`;
+Escribe "/criss" seguido de tu pregunta (ej: /criss quien es Leo Dan), o menciona al bot directamente. Recuerda tus conversaciones — usa /recordar o /olvidarme.`;
 
 const PALABRAS_CRISIS = [
   'quiero morir', 'no quiero vivir', 'suicidar', 'suicidio', 'matarme',
@@ -297,15 +294,13 @@ function esMencionAlBot(msg, texto, identificadoresBot) {
   return identificadoresBot.some(id => texto.includes(`@${id}`));
 }
 
+// Ahora la IA solo se activa con "/criss <pregunta>" o mencionando al bot —
+// ya NO cualquier "/" suelto.
 function debeResponderIA(texto, msg, identificadoresBot) {
   if (esMencionAlBot(msg, texto, identificadoresBot)) return true;
-  if (!texto.trim().startsWith('/')) return false;
-  const primeraPalabra = texto.trim().split(/\s+/)[0].toLowerCase();
-  return !COMANDOS_RESERVADOS.includes(primeraPalabra);
+  return /^\/criss\b/i.test(texto.trim());
 }
 
-// Normaliza un participante de group-participants.update: en versiones nuevas de
-// Baileys llega como objeto { id, phoneNumber, admin } en vez de un string plano.
 function normalizarParticipante(participanteRaw) {
   if (typeof participanteRaw === 'string') {
     return { jid: participanteRaw, numero: participanteRaw.split('@')[0] };
@@ -375,7 +370,20 @@ function comandoDespedidaAleatoria(numero) {
   return base.replace('@NUM', `@${numero}`);
 }
 
-// Meme en español, con varios subreddits de respaldo por si uno falla o no tiene posts
+const FRASES_BIENVENIDA = [
+  '🎉 ¡@NUM llegó al clan! Se siente hasta la vibra subir, bienvenid@ causa 🔥🙌',
+  '✨ ¡Un nuevo crack se une! @NUM, esto se pone bueno con vos aquí 😎🎊',
+  '🥳 ¡Aplausos para @NUM que acaba de entrar! Prepárate pa reírte harto por acá 😂🎈',
+  '💫 @NUM acaba de aparecer... y el grupo ya se siente más completo 🙏🔥',
+  '🎊 ¡Bienvenid@, @NUM! Agarra sitio que aquí la pasamos bien y sin roche 😄👑',
+  '🚀 @NUM se unió a la nave... ¡prepárense que llegó con toda la energía! 🎉😆',
+  '🌟 Nuevo integrante en la casa: @NUM. ¡Que la pases increíble por acá, causa! 🙌🎈'
+];
+function comandoBienvenidaAleatoria(numero) {
+  const base = FRASES_BIENVENIDA[Math.floor(Math.random() * FRASES_BIENVENIDA.length)];
+  return base.replace('@NUM', `@${numero}`);
+}
+
 const SUBREDDITS_MEME_ES = ['memesenespanol', 'chistes', 'humor'];
 async function comandoMeme(sock, jidGrupo) {
   for (const sub of SUBREDDITS_MEME_ES) {
@@ -761,7 +769,7 @@ async function procesarMensajeGrupo(sock, msg, identificadoresBot) {
   }
 
   try {
-    const consultaLimpia = texto.replace(/@\d+/g, '').replace(/^\/\S*\s*/, '').trim() || texto;
+    const consultaLimpia = texto.replace(/@\d+/g, '').replace(/^\/criss\s*/i, '').trim() || texto;
     const notas = `Mensaje de ${nombreContacto} dentro de un grupo de WhatsApp, hay más personas leyendo.` + obtenerContextoCorto(jidUsuario);
     const respuesta = await generarRespuestaIA(consultaLimpia, notas);
     await enviarRespuestaHumanizada(sock, jidGrupo, respuesta, [jidUsuario]);
@@ -784,7 +792,7 @@ function registrarBienvenidasYDespedidas(sock) {
           let fotoUrl = null;
           try { fotoUrl = await sock.profilePictureUrl(jidParticipante, 'image'); } catch (err) { fotoUrl = null; }
 
-          const texto = `🎉 ¡Bienvenid@ al grupo, @${numero}! Espero la pases chévere por acá 🙌`;
+          const texto = comandoBienvenidaAleatoria(numero);
 
           if (fotoUrl) {
             await sock.sendMessage(jidGrupo, { image: { url: fotoUrl }, caption: texto, mentions: [jidParticipante] });
@@ -951,7 +959,7 @@ const LISTA_COMANDOS_PANEL = [
     ['/reglaspvp', 'Reglas de PvP']
   ]},
   { cat: '🧠 IA', items: [
-    ['/ &lt;pregunta&gt;', 'Pregúntale a la IA'],
+    ['/criss &lt;pregunta&gt;', 'Pregúntale a la IA'],
     ['@bot &lt;pregunta&gt;', 'Mencionando al bot'],
     ['/recordar', 'Ver qué recuerda de ti'],
     ['/olvidarme', 'Borra su memoria de ti']

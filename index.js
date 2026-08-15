@@ -15,6 +15,11 @@ const MODELO_PRINCIPAL = 'gemini-3.6-flash';
 const MODELO_RESPALDO = 'gemini-3.6-flash';
 const MODELO_RESPALDO2 = 'gemini-3.6-flash';
 const MODELO_IMAGEN = process.env.MODELO_IMAGEN || 'gemini-3.1-flash-image';
+// Generación de imágenes casi nunca está disponible en el plan gratis de Gemini
+// (confirmado: aunque actives facturación, a veces sigue dando error). Por eso,
+// por defecto NO se intenta y se usa directo el avatar de Dicebear. Si más
+// adelante quieres intentarlo, pon USAR_AVATAR_IA=true en las variables de Render.
+const USAR_AVATAR_IA = process.env.USAR_AVATAR_IA === 'true';
 const CODIGO_DUEÑO = '2927760128';
 const NOMBRE_BOT = 'Criss Bot';
 const CREADOR = 'Albert Oficial';
@@ -23,7 +28,7 @@ const TU_NUMERO = '51996399291';
 const JID_DUEÑO = `${TU_NUMERO}@s.whatsapp.net`;
 const PUERTO = process.env.PORT || 3000;
 const LIMITE_DIARIO_ESTIMADO = 1400;
-const MAX_TOKENS_RESPUESTA = 500;
+const MAX_TOKENS_RESPUESTA = 1500;
 
 if (!CLAVE_IA_PRINCIPAL) {
   console.log('❌ ALERTA: no se detectó CLAVE_IA_PRINCIPAL en las variables de entorno.');
@@ -41,7 +46,7 @@ const COMANDOS_RESERVADOS = [
   '/todos', '/everyone', '/cerrar', '/abrir', '/comandos', '/ayuda',
   '/meme', '/matrimonio', '/encuesta', '/perfil', '/recordatorio',
   '/info', '/creador', '/reglas', '/reglaspvp', '/recordar', '/olvidarme',
-  '/auditoria', '/movimientos'
+  '/auditoria', '/movimientos', '/movimiento'
 ];
 
 const TEXTO_AYUDA = `🤖 *Comandos de ${NOMBRE_BOT}*
@@ -66,7 +71,7 @@ const TEXTO_AYUDA = `🤖 *Comandos de ${NOMBRE_BOT}*
 /encuesta pregunta; opción1; opción2 — encuesta nativa
 /recordatorio <minutos> <texto> — aviso al grupo
 /ranking — top de más activos
-/auditoria <cantidad> — ver movimientos de admins (expulsiones, ascensos, ajustes)
+/auditoria <cantidad> — ver movimientos de admins (también: /movimientos, /movimiento)
 
 📋 *Info*
 /info — información del bot
@@ -75,7 +80,7 @@ const TEXTO_AYUDA = `🤖 *Comandos de ${NOMBRE_BOT}*
 /reglaspvp — reglas de PvP
 
 🧠 *IA*
-Escribe "/criss" seguido de tu pregunta, o menciona al bot directamente. Recuerda tus conversaciones — usa /recordar o /olvidarme.`;
+Escribe "/criss" seguido de tu pregunta (ej: /criss quien es Leo Dan), o menciona al bot directamente. Recuerda tus conversaciones — usa /recordar o /olvidarme.`;
 
 const PALABRAS_CRISIS = [
   'quiero morir', 'no quiero vivir', 'suicidar', 'suicidio', 'matarme',
@@ -174,7 +179,6 @@ function olvidarUsuario(jidUsuario) {
   guardarMemoria();
 }
 
-// ==== REGISTRO DE AUDITORÍA DE ADMINS ====
 const ARCHIVO_AUDITORIA = path.join(__dirname, 'auditoria.json');
 function cargarAuditoria() {
   try { return JSON.parse(fs.readFileSync(ARCHIVO_AUDITORIA, 'utf-8')); }
@@ -195,7 +199,6 @@ function registrarAccionAdmin(jidGrupo, tipo, detalle) {
   if (registroAuditoria.length > 500) registroAuditoria.shift();
   guardarAuditoria();
 }
-// ==== FIN REGISTRO DE AUDITORÍA ====
 
 const contadorMensajesGrupo = new Map();
 function registrarMensajeGrupo(jidGrupo, jidUsuario) {
@@ -282,7 +285,7 @@ async function generarRespuestaIA(prompt, notasExtra) {
 }
 
 async function generarAvatarIA(numero) {
-  if (CLIENTES_IA.length === 0) return null;
+  if (!USAR_AVATAR_IA || CLIENTES_IA.length === 0) return null;
   try {
     const res = await CLIENTES_IA[0].ai.models.generateContent({
       model: MODELO_IMAGEN,
@@ -295,7 +298,7 @@ async function generarAvatarIA(numero) {
     }
     return null;
   } catch (err) {
-    console.log('⚠️ No se pudo generar avatar con IA (revisa MODELO_IMAGEN):', err.message);
+    console.log('⚠️ No se pudo generar avatar con IA:', err.message);
     return null;
   }
 }
@@ -446,8 +449,6 @@ async function comandoRanking(sock, jidGrupo) {
   return { texto, mentions };
 }
 
-// Más robusto: revisa varias formas del identificador (id, phoneNumber, jid)
-// para no fallar por el tema de LID vs número real.
 async function esAdminGrupo(sock, jidGrupo, jidUsuario) {
   try {
     const metadata = await sock.groupMetadata(jidGrupo);
@@ -461,6 +462,8 @@ async function esAdminGrupo(sock, jidGrupo, jidUsuario) {
   }
 }
 
+// 🔧 BUG CORREGIDO: antes decía { text, mentions } (buscaba una variable "text"
+// que no existía) — ahora sí manda el mensaje de verdad con { text: texto, ... }
 async function comandoPerfil(sock, jidGrupo, jidUsuario, mencionJid) {
   try {
     const jidObjetivo = mencionJid || jidUsuario;
@@ -469,13 +472,14 @@ async function comandoPerfil(sock, jidGrupo, jidUsuario, mencionJid) {
     const mensajes = mapa?.get(jidObjetivo) || 0;
     const esAdmin = await esAdminGrupo(sock, jidGrupo, jidObjetivo);
     const texto = `👤 *Perfil de @${numero}*\n📨 Mensajes en el grupo: ${mensajes}\n👑 Admin: ${esAdmin ? 'Sí' : 'No'}`;
-    await sock.sendMessage(jidGrupo, { text, mentions: [jidObjetivo] });
+    await sock.sendMessage(jidGrupo, { text: texto, mentions: [jidObjetivo] });
   } catch (err) {
     console.log('⚠️ Error en /perfil:', err.message);
     await sock.sendMessage(jidGrupo, { text: 'No pude generar el perfil ahorita, intenta de nuevo 🙏' });
   }
 }
 
+// 🔧 BUG CORREGIDO: mismo problema, { text } en vez de { text: texto }
 async function comandoAuditoria(sock, jidGrupo, jidUsuario, cantidadTexto) {
   if (!(await esAdminGrupo(sock, jidGrupo, jidUsuario))) {
     await sock.sendMessage(jidGrupo, { text: 'Solo los admins pueden ver el registro de movimientos 🚫' });
@@ -492,7 +496,7 @@ async function comandoAuditoria(sock, jidGrupo, jidUsuario, cantidadTexto) {
     const fecha = new Date(e.fecha).toLocaleString('es-PE', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit' });
     return `${ICONOS[e.tipo] || '•'} [${fecha}] ${e.detalle}`;
   }).join('\n');
-  await sock.sendMessage(jidGrupo, { text });
+  await sock.sendMessage(jidGrupo, { text: texto });
 }
 async function comandoKick(sock, jidGrupo, jidUsuario, mencionados) {
   if (!(await esAdminGrupo(sock, jidGrupo, jidUsuario))) {
@@ -506,7 +510,6 @@ async function comandoKick(sock, jidGrupo, jidUsuario, mencionados) {
   try {
     await sock.groupParticipantsUpdate(jidGrupo, mencionados, 'remove');
     await sock.sendMessage(jidGrupo, { text: `👋 Listo, saqué a ${mencionados.length} del grupo.` });
-    // No registramos aquí — el evento group-participants.update lo captura con el autor real
   } catch (err) {
     await sock.sendMessage(jidGrupo, { text: 'No pude sacarlo, revisa que el bot sea admin del grupo 🙏' });
   }
@@ -773,7 +776,7 @@ async function procesarMensajeGrupo(sock, msg, identificadoresBot) {
         await sock.sendMessage(jidGrupo, { text: t, mentions });
         return;
       }
-      case '/auditoria': case '/movimientos':
+      case '/auditoria': case '/movimientos': case '/movimiento':
         await comandoAuditoria(sock, jidGrupo, jidUsuario, resto[0]); return;
       case '/kick': case '/eliminar': case '/sacar': case '/ban':
         await comandoKick(sock, jidGrupo, jidUsuario, mencionados); return;

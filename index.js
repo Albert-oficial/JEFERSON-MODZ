@@ -23,7 +23,7 @@ const TU_NUMERO = '51996399291';
 const JID_DUEÑO = `${TU_NUMERO}@s.whatsapp.net`;
 const PUERTO = process.env.PORT || 3000;
 const LIMITE_DIARIO_ESTIMADO = 1400;
-const MAX_TOKENS_RESPUESTA =1500;
+const MAX_TOKENS_RESPUESTA = 500;
 
 if (!CLAVE_IA_PRINCIPAL) {
   console.log('❌ ALERTA: no se detectó CLAVE_IA_PRINCIPAL en las variables de entorno.');
@@ -34,15 +34,14 @@ if (!CLAVE_IA_RESPALDO) {
 if (!CLAVE_IA_RESPALDO2) {
   console.log('⚠️ Aviso: no se detectó CLAVE_IA_RESPALDO2 (tercer token).');
 }
-// Recuerda: si los 3 tokens vienen del mismo proyecto de Google Cloud, comparten
-// el mismo límite gratis de 20 solicitudes/día por modelo.
 
 const COMANDOS_RESERVADOS = [
   '/porciento', '/shipeo', '/dado', '/moneda', '/8bola', '/frase', '/ranking',
   '/kick', '/eliminar', '/sacar', '/ban', '/promover', '/degradar',
   '/todos', '/everyone', '/cerrar', '/abrir', '/comandos', '/ayuda',
   '/meme', '/matrimonio', '/encuesta', '/perfil', '/recordatorio',
-  '/info', '/creador', '/reglas', '/reglaspvp', '/recordar', '/olvidarme'
+  '/info', '/creador', '/reglas', '/reglaspvp', '/recordar', '/olvidarme',
+  '/auditoria', '/movimientos'
 ];
 
 const TEXTO_AYUDA = `🤖 *Comandos de ${NOMBRE_BOT}*
@@ -67,6 +66,7 @@ const TEXTO_AYUDA = `🤖 *Comandos de ${NOMBRE_BOT}*
 /encuesta pregunta; opción1; opción2 — encuesta nativa
 /recordatorio <minutos> <texto> — aviso al grupo
 /ranking — top de más activos
+/auditoria <cantidad> — ver movimientos de admins (expulsiones, ascensos, ajustes)
 
 📋 *Info*
 /info — información del bot
@@ -75,7 +75,7 @@ const TEXTO_AYUDA = `🤖 *Comandos de ${NOMBRE_BOT}*
 /reglaspvp — reglas de PvP
 
 🧠 *IA*
-Escribe "/criss" seguido de tu pregunta (ej: /criss quien es Leo Dan), o menciona al bot directamente. Recuerda tus conversaciones — usa /recordar o /olvidarme.`;
+Escribe "/criss" seguido de tu pregunta, o menciona al bot directamente. Recuerda tus conversaciones — usa /recordar o /olvidarme.`;
 
 const PALABRAS_CRISIS = [
   'quiero morir', 'no quiero vivir', 'suicidar', 'suicidio', 'matarme',
@@ -173,6 +173,29 @@ function olvidarUsuario(jidUsuario) {
   delete memoriaPersistente[jidUsuario];
   guardarMemoria();
 }
+
+// ==== REGISTRO DE AUDITORÍA DE ADMINS ====
+const ARCHIVO_AUDITORIA = path.join(__dirname, 'auditoria.json');
+function cargarAuditoria() {
+  try { return JSON.parse(fs.readFileSync(ARCHIVO_AUDITORIA, 'utf-8')); }
+  catch (err) { return []; }
+}
+let registroAuditoria = cargarAuditoria();
+let guardadoAuditoriaPendiente = null;
+function guardarAuditoria() {
+  if (guardadoAuditoriaPendiente) clearTimeout(guardadoAuditoriaPendiente);
+  guardadoAuditoriaPendiente = setTimeout(() => {
+    fs.writeFile(ARCHIVO_AUDITORIA, JSON.stringify(registroAuditoria), (err) => {
+      if (err) console.log('⚠️ Error guardando auditoría:', err.message);
+    });
+  }, 2000);
+}
+function registrarAccionAdmin(jidGrupo, tipo, detalle) {
+  registroAuditoria.push({ jidGrupo, tipo, detalle, fecha: new Date().toISOString() });
+  if (registroAuditoria.length > 500) registroAuditoria.shift();
+  guardarAuditoria();
+}
+// ==== FIN REGISTRO DE AUDITORÍA ====
 
 const contadorMensajesGrupo = new Map();
 function registrarMensajeGrupo(jidGrupo, jidUsuario) {
@@ -294,8 +317,6 @@ function esMencionAlBot(msg, texto, identificadoresBot) {
   return identificadoresBot.some(id => texto.includes(`@${id}`));
 }
 
-// Ahora la IA solo se activa con "/criss <pregunta>" o mencionando al bot —
-// ya NO cualquier "/" suelto.
 function debeResponderIA(texto, msg, identificadoresBot) {
   if (esMencionAlBot(msg, texto, identificadoresBot)) return true;
   return /^\/criss\b/i.test(texto.trim());
@@ -425,24 +446,53 @@ async function comandoRanking(sock, jidGrupo) {
   return { texto, mentions };
 }
 
+// Más robusto: revisa varias formas del identificador (id, phoneNumber, jid)
+// para no fallar por el tema de LID vs número real.
 async function esAdminGrupo(sock, jidGrupo, jidUsuario) {
   try {
     const metadata = await sock.groupMetadata(jidGrupo);
-    const participante = metadata.participants.find(p => p.id === jidUsuario);
+    const participante = metadata.participants.find(p =>
+      p.id === jidUsuario || p.phoneNumber === jidUsuario || p.jid === jidUsuario
+    );
     return !!participante && (participante.admin === 'admin' || participante.admin === 'superadmin');
   } catch (err) {
+    console.log('⚠️ Error verificando admin:', err.message);
     return false;
   }
 }
 
 async function comandoPerfil(sock, jidGrupo, jidUsuario, mencionJid) {
-  const jidObjetivo = mencionJid || jidUsuario;
-  const numero = jidObjetivo.split('@')[0];
-  const mapa = contadorMensajesGrupo.get(jidGrupo);
-  const mensajes = mapa?.get(jidObjetivo) || 0;
-  const esAdmin = await esAdminGrupo(sock, jidGrupo, jidObjetivo);
-  const texto = `👤 *Perfil de @${numero}*\n📨 Mensajes en el grupo: ${mensajes}\n👑 Admin: ${esAdmin ? 'Sí' : 'No'}`;
-  await sock.sendMessage(jidGrupo, { text, mentions: [jidObjetivo] });
+  try {
+    const jidObjetivo = mencionJid || jidUsuario;
+    const numero = jidObjetivo.split('@')[0];
+    const mapa = contadorMensajesGrupo.get(jidGrupo);
+    const mensajes = mapa?.get(jidObjetivo) || 0;
+    const esAdmin = await esAdminGrupo(sock, jidGrupo, jidObjetivo);
+    const texto = `👤 *Perfil de @${numero}*\n📨 Mensajes en el grupo: ${mensajes}\n👑 Admin: ${esAdmin ? 'Sí' : 'No'}`;
+    await sock.sendMessage(jidGrupo, { text, mentions: [jidObjetivo] });
+  } catch (err) {
+    console.log('⚠️ Error en /perfil:', err.message);
+    await sock.sendMessage(jidGrupo, { text: 'No pude generar el perfil ahorita, intenta de nuevo 🙏' });
+  }
+}
+
+async function comandoAuditoria(sock, jidGrupo, jidUsuario, cantidadTexto) {
+  if (!(await esAdminGrupo(sock, jidGrupo, jidUsuario))) {
+    await sock.sendMessage(jidGrupo, { text: 'Solo los admins pueden ver el registro de movimientos 🚫' });
+    return;
+  }
+  const cantidad = Math.min(Math.max(parseInt(cantidadTexto, 10) || 10, 1), 30);
+  const entradas = registroAuditoria.filter(e => e.jidGrupo === jidGrupo).slice(-cantidad).reverse();
+  if (!entradas.length) {
+    await sock.sendMessage(jidGrupo, { text: 'Aún no hay movimientos registrados en este grupo 📋' });
+    return;
+  }
+  const ICONOS = { kick: '🚫', add: '➕', promote: '⭐', demote: '🔻', cerrar: '🔒', abrir: '🔓' };
+  const texto = '📋 *Últimos movimientos de admins:*\n\n' + entradas.map(e => {
+    const fecha = new Date(e.fecha).toLocaleString('es-PE', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit' });
+    return `${ICONOS[e.tipo] || '•'} [${fecha}] ${e.detalle}`;
+  }).join('\n');
+  await sock.sendMessage(jidGrupo, { text });
 }
 async function comandoKick(sock, jidGrupo, jidUsuario, mencionados) {
   if (!(await esAdminGrupo(sock, jidGrupo, jidUsuario))) {
@@ -456,6 +506,7 @@ async function comandoKick(sock, jidGrupo, jidUsuario, mencionados) {
   try {
     await sock.groupParticipantsUpdate(jidGrupo, mencionados, 'remove');
     await sock.sendMessage(jidGrupo, { text: `👋 Listo, saqué a ${mencionados.length} del grupo.` });
+    // No registramos aquí — el evento group-participants.update lo captura con el autor real
   } catch (err) {
     await sock.sendMessage(jidGrupo, { text: 'No pude sacarlo, revisa que el bot sea admin del grupo 🙏' });
   }
@@ -502,6 +553,7 @@ async function comandoCerrarGrupo(sock, jidGrupo, jidUsuario, cerrar) {
   try {
     await sock.groupSettingUpdate(jidGrupo, cerrar ? 'announcement' : 'not_announcement');
     await sock.sendMessage(jidGrupo, { text: cerrar ? '🔒 Grupo cerrado, solo admins escriben.' : '🔓 Grupo abierto para todos.' });
+    registrarAccionAdmin(jidGrupo, cerrar ? 'cerrar' : 'abrir', `@${jidUsuario.split('@')[0]} ${cerrar ? 'cerró' : 'abrió'} el grupo (cambio de ajustes)`);
   } catch (err) {
     await sock.sendMessage(jidGrupo, { text: 'No pude cambiar la configuración, revisa que el bot sea admin.' });
   }
@@ -721,6 +773,8 @@ async function procesarMensajeGrupo(sock, msg, identificadoresBot) {
         await sock.sendMessage(jidGrupo, { text: t, mentions });
         return;
       }
+      case '/auditoria': case '/movimientos':
+        await comandoAuditoria(sock, jidGrupo, jidUsuario, resto[0]); return;
       case '/kick': case '/eliminar': case '/sacar': case '/ban':
         await comandoKick(sock, jidGrupo, jidUsuario, mencionados); return;
       case '/promover': await comandoPromoverDegradar(sock, jidGrupo, jidUsuario, mencionados, 'promote'); return;
@@ -783,7 +837,9 @@ async function procesarMensajeGrupo(sock, msg, identificadoresBot) {
 function registrarBienvenidasYDespedidas(sock) {
   sock.ev.on('group-participants.update', async (evento) => {
     console.log('📥 Evento de participantes recibido:', evento.action);
-    const { id: jidGrupo, participants, action } = evento;
+    const { id: jidGrupo, participants, action, author } = evento;
+    const autorNumero = author ? author.split('@')[0] : null;
+
     for (const participanteRaw of participants) {
       const { jid: jidParticipante, numero } = normalizarParticipante(participanteRaw);
       if (!jidParticipante) { console.log('⚠️ Participante sin jid válido, se omite:', participanteRaw); continue; }
@@ -805,12 +861,24 @@ function registrarBienvenidasYDespedidas(sock) {
               await sock.sendMessage(jidGrupo, { image: { url: fotoRespaldo }, caption: texto, mentions: [jidParticipante] });
             }
           }
+          if (autorNumero) {
+            registrarAccionAdmin(jidGrupo, 'add', `@${autorNumero} agregó a @${numero} al grupo`);
+          }
         } else if (action === 'remove') {
           await sock.sendMessage(jidGrupo, { text: comandoDespedidaAleatoria(numero), mentions: [jidParticipante] });
+          if (autorNumero && autorNumero !== numero) {
+            registrarAccionAdmin(jidGrupo, 'kick', `@${autorNumero} sacó a @${numero} del grupo`);
+          }
         } else if (action === 'promote') {
           await sock.sendMessage(jidGrupo, { text: `⭐ @${numero} ahora es admin del grupo.`, mentions: [jidParticipante] });
+          if (autorNumero) {
+            registrarAccionAdmin(jidGrupo, 'promote', `@${autorNumero} le dio admin a @${numero}`);
+          }
         } else if (action === 'demote') {
           await sock.sendMessage(jidGrupo, { text: `🔻 @${numero} ya no es admin.`, mentions: [jidParticipante] });
+          if (autorNumero) {
+            registrarAccionAdmin(jidGrupo, 'demote', `@${autorNumero} le quitó admin a @${numero}`);
+          }
         }
       } catch (err) {
         console.log('⚠️ Error en bienvenida/despedida:', err.message);
@@ -950,7 +1018,8 @@ const LISTA_COMANDOS_PANEL = [
     ['/cerrar · /abrir', 'Controla quién escribe'],
     ['/encuesta preg; op1; op2', 'Encuesta nativa'],
     ['/recordatorio &lt;min&gt; &lt;texto&gt;', 'Aviso al grupo'],
-    ['/ranking', 'Top de más activos']
+    ['/ranking', 'Top de más activos'],
+    ['/auditoria &lt;cant&gt;', 'Movimientos de admins']
   ]},
   { cat: '📋 Info', items: [
     ['/info', 'Info del bot'],

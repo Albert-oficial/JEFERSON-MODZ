@@ -15,20 +15,16 @@ const MODELO_PRINCIPAL = 'gemini-3.6-flash';
 const MODELO_RESPALDO = 'gemini-3.6-flash';
 const MODELO_RESPALDO2 = 'gemini-3.6-flash';
 const MODELO_IMAGEN = process.env.MODELO_IMAGEN || 'gemini-3.1-flash-image';
-// Generación de imágenes casi nunca está disponible en el plan gratis de Gemini
-// (confirmado: aunque actives facturación, a veces sigue dando error). Por eso,
-// por defecto NO se intenta y se usa directo el avatar de Dicebear. Si más
-// adelante quieres intentarlo, pon USAR_AVATAR_IA=true en las variables de Render.
 const USAR_AVATAR_IA = process.env.USAR_AVATAR_IA === 'true';
 const CODIGO_DUEÑO = '2927760128';
 const NOMBRE_BOT = 'Criss Bot';
 const CREADOR = 'Albert Oficial';
-const VERSION_BOT = '2.01.2';
+const VERSION_BOT = '2.02.0';
 const TU_NUMERO = '51996399291';
 const JID_DUEÑO = `${TU_NUMERO}@s.whatsapp.net`;
 const PUERTO = process.env.PORT || 3000;
 const LIMITE_DIARIO_ESTIMADO = 1400;
-const MAX_TOKENS_RESPUESTA = 1600;
+const MAX_TOKENS_RESPUESTA = 1500;
 
 if (!CLAVE_IA_PRINCIPAL) {
   console.log('❌ ALERTA: no se detectó CLAVE_IA_PRINCIPAL en las variables de entorno.');
@@ -41,7 +37,7 @@ if (!CLAVE_IA_RESPALDO2) {
 }
 
 const COMANDOS_RESERVADOS = [
-  '/porciento', '/shipeo', '/dado', '/moneda', '/8bola', '/frase', '/ranking',
+  '/porciento', '/shipeo', '/dado', '/moneda', '/frase', '/ranking',
   '/kick', '/eliminar', '/sacar', '/ban', '/promover', '/degradar',
   '/todos', '/everyone', '/cerrar', '/abrir', '/comandos', '/ayuda',
   '/meme', '/matrimonio', '/encuesta', '/perfil', '/recordatorio',
@@ -49,38 +45,52 @@ const COMANDOS_RESERVADOS = [
   '/auditoria', '/movimientos', '/movimiento'
 ];
 
-const TEXTO_AYUDA = `🤖 *Comandos de ${NOMBRE_BOT}*
+const TEXTO_AYUDA = `📖 *MANUAL DE COMANDOS — ${NOMBRE_BOT}*
 
-🎉 *Diversión*
-/porciento <algo> @usuario — le saca un % random
-/shipeo @user1 @user2 — compatibilidad random
-/matrimonio @user1 @user2 — certificado de boda grupal
-/dado — tira un dado
-/moneda — cara o sello
-/8bola <pregunta> — bola 8 mágica
-/frase — frase random
-/meme — manda un meme en español
-/perfil @usuario — muestra su actividad en el grupo
+Todos los comandos empiezan con "/". Aquí el listado completo, organizado por categoría.
 
-👑 *Admin del grupo*
-/kick @usuario — saca del grupo
-/promover @usuario — lo hace admin
-/degradar @usuario — le quita admin
-/todos <mensaje> — etiqueta a todos
-/cerrar / /abrir — solo admins escriben / abre para todos
-/encuesta pregunta; opción1; opción2 — encuesta nativa
-/recordatorio <minutos> <texto> — aviso al grupo
-/ranking — top de más activos
-/auditoria <cantidad> — ver movimientos de admins (también: /movimientos, /movimiento)
+━━━━━━━━━━━━━━━━━━
+🎉 *ENTRETENIMIENTO*
+━━━━━━━━━━━━━━━━━━
+▸ /porciento <tema> @usuario — Genera un porcentaje aleatorio sobre el tema indicado.
+▸ /shipeo @user1 @user2 — Calcula una "compatibilidad" aleatoria entre dos personas.
+▸ /matrimonio @user1 @user2 — Emite un certificado de matrimonio grupal, en broma.
+▸ /dado — Lanza un dado virtual (1 a 6).
+▸ /moneda — Lanza una moneda (cara o sello).
+▸ /frase — Comparte una frase motivacional aleatoria.
+▸ /meme — Envía un meme en español.
+▸ /perfil @usuario — Muestra la actividad de un miembro dentro del grupo.
 
-📋 *Info*
-/info — información del bot
-/creador — quién hizo el bot
-/reglas — reglamento del clan
-/reglaspvp — reglas de PvP
+━━━━━━━━━━━━━━━━━━
+👑 *ADMINISTRACIÓN* (requieren ser admin)
+━━━━━━━━━━━━━━━━━━
+▸ /kick @usuario — Expulsa a un miembro del grupo.
+▸ /promover @usuario — Otorga el rol de administrador.
+▸ /degradar @usuario — Retira el rol de administrador.
+▸ /todos <mensaje> — Envía un aviso etiquetando a todos.
+▸ /cerrar — Solo admins pueden escribir en el grupo.
+▸ /abrir — Todos los miembros pueden volver a escribir.
+▸ /encuesta <pregunta>; <opción1>; <opción2> — Crea una encuesta nativa.
+▸ /recordatorio <minutos> <mensaje> — Programa un aviso automático.
+▸ /ranking — Muestra a los miembros más activos.
+▸ /auditoria <cantidad> — Historial de acciones de admins (alias: /movimientos, /movimiento).
 
-🧠 *IA*
-Escribe "/criss" seguido de tu pregunta (ej: /criss quien es Leo Dan), o menciona al bot directamente. Recuerda tus conversaciones — usa /recordar o /olvidarme.`;
+━━━━━━━━━━━━━━━━━━
+📋 *INFORMACIÓN*
+━━━━━━━━━━━━━━━━━━
+▸ /info — Estado y versión actual del bot.
+▸ /creador — Quién desarrolló el bot.
+▸ /reglas — Reglamento oficial del clan.
+▸ /reglaspvp — Reglamento oficial de los enfrentamientos PvP.
+
+━━━━━━━━━━━━━━━━━━
+🧠 *INTELIGENCIA ARTIFICIAL*
+━━━━━━━━━━━━━━━━━━
+▸ /criss <pregunta> — Consulta directa a la IA del bot.
+▸ Mencionar al bot — También activa la IA, sin necesidad de comando.
+▸ Citar un mensaje + /criss <pregunta> — La IA lee el mensaje citado como contexto.
+▸ /recordar — Qué recuerda la IA sobre ti.
+▸ /olvidarme — Elimina tu historial guardado por la IA.`;
 
 const PALABRAS_CRISIS = [
   'quiero morir', 'no quiero vivir', 'suicidar', 'suicidio', 'matarme',
@@ -113,7 +123,7 @@ const SAFETY_SETTINGS = [
 const REGLAS_IA_BASE = `
 Eres ${NOMBRE_BOT}, y hablas como si fueras ${CREADOR} mismo respondiéndole a sus panas dentro de un GRUPO de WhatsApp. Personalidad cálida y con onda peruana, cercano, con harta jerga limeña, pero medida — choro y confianzudo, no formal ni acartonado.
 
-CONTEXTO: estás respondiendo dentro de un grupo, puede haber varias personas leyendo.
+CONTEXTO: estás respondiendo dentro de un grupo, puede haber varias personas leyendo. Si la persona citó un mensaje anterior, ese mensaje aparecerá en el contexto adicional — tenlo en cuenta al responder.
 
 INFORMACIÓN SOBRE ${CREADOR}:
 - Es el creador y desarrollador de este bot y de aplicaciones
@@ -198,6 +208,24 @@ function registrarAccionAdmin(jidGrupo, tipo, detalle) {
   registroAuditoria.push({ jidGrupo, tipo, detalle, fecha: new Date().toISOString() });
   if (registroAuditoria.length > 500) registroAuditoria.shift();
   guardarAuditoria();
+}
+
+// Caché de nombres vistos en mensajes, para mostrar "Nombre (número)" en la auditoría
+const nombresConocidos = new Map();
+function registrarNombreConocido(jid, nombre) {
+  if (jid && nombre && nombre !== 'amig@') nombresConocidos.set(jid, nombre);
+}
+// Resuelve el número real (por si el jid viene en formato @lid) y arma "Nombre (número)"
+async function resolverIdentidad(sock, jidGrupo, jidCrudo) {
+  if (!jidCrudo) return 'alguien';
+  let numero = jidCrudo.split('@')[0];
+  try {
+    const metadata = await sock.groupMetadata(jidGrupo);
+    const participante = metadata.participants.find(p => p.id === jidCrudo || p.jid === jidCrudo);
+    if (participante?.phoneNumber) numero = participante.phoneNumber.split('@')[0];
+  } catch (err) {}
+  const nombre = nombresConocidos.get(jidCrudo) || nombresConocidos.get(`${numero}@s.whatsapp.net`);
+  return nombre ? `${nombre} (${numero})` : numero;
 }
 
 const contadorMensajesGrupo = new Map();
@@ -325,6 +353,19 @@ function debeResponderIA(texto, msg, identificadoresBot) {
   return /^\/criss\b/i.test(texto.trim());
 }
 
+// Extrae el texto de un mensaje citado (respondido) para dárselo de contexto a la IA
+function obtenerTextoCitado(msg) {
+  const contextInfo = msg.message?.extendedTextMessage?.contextInfo;
+  const citado = contextInfo?.quotedMessage;
+  if (!citado) return null;
+  const texto = citado.conversation
+    || citado.extendedTextMessage?.text
+    || citado.imageMessage?.caption
+    || citado.videoMessage?.caption
+    || null;
+  return texto ? texto.trim() : null;
+}
+
 function normalizarParticipante(participanteRaw) {
   if (typeof participanteRaw === 'string') {
     return { jid: participanteRaw, numero: participanteRaw.split('@')[0] };
@@ -364,12 +405,6 @@ function comandoMatrimonio(mencionados) {
 
 function comandoDado() { return Math.floor(Math.random() * 6) + 1; }
 function comandoMoneda() { return Math.random() < 0.5 ? 'Cara 🪙' : 'Sello 🪙'; }
-
-const RESPUESTAS_8BOLA = [
-  'Sí, totalmente 🔮', 'No, ni de a vainas 🙅', 'Puede ser...', 'Pregúntame luego 🕐',
-  'Mmm no está claro 😐', 'Sin duda que sí ✅', 'Yo lo veo difícil 😬', 'Las señales dicen que sí ✨'
-];
-function comando8Bola() { return RESPUESTAS_8BOLA[Math.floor(Math.random() * RESPUESTAS_8BOLA.length)]; }
 
 const FRASES_RANDOM = [
   'La constancia le gana al talento cuando el talento no es constante 💪',
@@ -462,8 +497,6 @@ async function esAdminGrupo(sock, jidGrupo, jidUsuario) {
   }
 }
 
-// 🔧 BUG CORREGIDO: antes decía { text, mentions } (buscaba una variable "text"
-// que no existía) — ahora sí manda el mensaje de verdad con { text: texto, ... }
 async function comandoPerfil(sock, jidGrupo, jidUsuario, mencionJid) {
   try {
     const jidObjetivo = mencionJid || jidUsuario;
@@ -479,7 +512,6 @@ async function comandoPerfil(sock, jidGrupo, jidUsuario, mencionJid) {
   }
 }
 
-// 🔧 BUG CORREGIDO: mismo problema, { text } en vez de { text: texto }
 async function comandoAuditoria(sock, jidGrupo, jidUsuario, cantidadTexto) {
   if (!(await esAdminGrupo(sock, jidGrupo, jidUsuario))) {
     await sock.sendMessage(jidGrupo, { text: 'Solo los admins pueden ver el registro de movimientos 🚫' });
@@ -488,14 +520,15 @@ async function comandoAuditoria(sock, jidGrupo, jidUsuario, cantidadTexto) {
   const cantidad = Math.min(Math.max(parseInt(cantidadTexto, 10) || 10, 1), 30);
   const entradas = registroAuditoria.filter(e => e.jidGrupo === jidGrupo).slice(-cantidad).reverse();
   if (!entradas.length) {
-    await sock.sendMessage(jidGrupo, { text: 'Aún no hay movimientos registrados en este grupo 📋' });
+    await sock.sendMessage(jidGrupo, { text: '📋 Aún no hay movimientos registrados en este grupo.' });
     return;
   }
   const ICONOS = { kick: '🚫', add: '➕', promote: '⭐', demote: '🔻', cerrar: '🔒', abrir: '🔓' };
-  const texto = '📋 *Últimos movimientos de admins:*\n\n' + entradas.map(e => {
-    const fecha = new Date(e.fecha).toLocaleString('es-PE', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit' });
-    return `${ICONOS[e.tipo] || '•'} [${fecha}] ${e.detalle}`;
-  }).join('\n');
+  const texto = `📋 *REGISTRO DE AUDITORÍA*\n_Últimos ${entradas.length} movimientos_\n\n` +
+    entradas.map(e => {
+      const fecha = new Date(e.fecha).toLocaleString('es-PE', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+      return `${ICONOS[e.tipo] || '•'} *${fecha}*\n${e.detalle}`;
+    }).join('\n\n');
   await sock.sendMessage(jidGrupo, { text: texto });
 }
 async function comandoKick(sock, jidGrupo, jidUsuario, mencionados) {
@@ -556,7 +589,8 @@ async function comandoCerrarGrupo(sock, jidGrupo, jidUsuario, cerrar) {
   try {
     await sock.groupSettingUpdate(jidGrupo, cerrar ? 'announcement' : 'not_announcement');
     await sock.sendMessage(jidGrupo, { text: cerrar ? '🔒 Grupo cerrado, solo admins escriben.' : '🔓 Grupo abierto para todos.' });
-    registrarAccionAdmin(jidGrupo, cerrar ? 'cerrar' : 'abrir', `@${jidUsuario.split('@')[0]} ${cerrar ? 'cerró' : 'abrió'} el grupo (cambio de ajustes)`);
+    const autorMostrar = await resolverIdentidad(sock, jidGrupo, jidUsuario);
+    registrarAccionAdmin(jidGrupo, cerrar ? 'cerrar' : 'abrir', `${autorMostrar} ${cerrar ? 'cerró' : 'abrió'} el grupo (cambio de ajustes)`);
   } catch (err) {
     await sock.sendMessage(jidGrupo, { text: 'No pude cambiar la configuración, revisa que el bot sea admin.' });
   }
@@ -731,6 +765,7 @@ async function procesarMensajeGrupo(sock, msg, identificadoresBot) {
   if (!texto) return;
 
   registrarMensajeGrupo(jidGrupo, jidUsuario);
+  registrarNombreConocido(jidUsuario, nombreContacto);
 
   if (esIntencionCompra(texto)) {
     try {
@@ -766,7 +801,6 @@ async function procesarMensajeGrupo(sock, msg, identificadoresBot) {
       }
       case '/dado': await sock.sendMessage(jidGrupo, { text: `🎲 Salió: ${comandoDado()}` }); return;
       case '/moneda': await sock.sendMessage(jidGrupo, { text: `🪙 ${comandoMoneda()}` }); return;
-      case '/8bola': await sock.sendMessage(jidGrupo, { text: `🔮 ${comando8Bola()}` }); return;
       case '/frase': await sock.sendMessage(jidGrupo, { text: comandoFrase() }); return;
       case '/meme': await comandoMeme(sock, jidGrupo); return;
       case '/encuesta': await comandoEncuesta(sock, jidGrupo, resto.join(' ')); return;
@@ -827,7 +861,11 @@ async function procesarMensajeGrupo(sock, msg, identificadoresBot) {
 
   try {
     const consultaLimpia = texto.replace(/@\d+/g, '').replace(/^\/criss\s*/i, '').trim() || texto;
-    const notas = `Mensaje de ${nombreContacto} dentro de un grupo de WhatsApp, hay más personas leyendo.` + obtenerContextoCorto(jidUsuario);
+    const textoCitado = obtenerTextoCitado(msg);
+    let notas = `Mensaje de ${nombreContacto} dentro de un grupo de WhatsApp, hay más personas leyendo.` + obtenerContextoCorto(jidUsuario);
+    if (textoCitado) {
+      notas += `\n\nEsta persona citó (respondió a) un mensaje anterior que decía: "${textoCitado}". Ten esto en cuenta al responder, puede ser el tema de su pregunta.`;
+    }
     const respuesta = await generarRespuestaIA(consultaLimpia, notas);
     await enviarRespuestaHumanizada(sock, jidGrupo, respuesta, [jidUsuario]);
     agregarAMemoriaCorta(jidUsuario, texto, respuesta);
@@ -841,12 +879,14 @@ function registrarBienvenidasYDespedidas(sock) {
   sock.ev.on('group-participants.update', async (evento) => {
     console.log('📥 Evento de participantes recibido:', evento.action);
     const { id: jidGrupo, participants, action, author } = evento;
-    const autorNumero = author ? author.split('@')[0] : null;
+    const autorMostrar = author ? await resolverIdentidad(sock, jidGrupo, author) : 'un admin';
 
     for (const participanteRaw of participants) {
       const { jid: jidParticipante, numero } = normalizarParticipante(participanteRaw);
       if (!jidParticipante) { console.log('⚠️ Participante sin jid válido, se omite:', participanteRaw); continue; }
       try {
+        const objetivoMostrar = await resolverIdentidad(sock, jidGrupo, jidParticipante);
+
         if (action === 'add') {
           let fotoUrl = null;
           try { fotoUrl = await sock.profilePictureUrl(jidParticipante, 'image'); } catch (err) { fotoUrl = null; }
@@ -864,24 +904,18 @@ function registrarBienvenidasYDespedidas(sock) {
               await sock.sendMessage(jidGrupo, { image: { url: fotoRespaldo }, caption: texto, mentions: [jidParticipante] });
             }
           }
-          if (autorNumero) {
-            registrarAccionAdmin(jidGrupo, 'add', `@${autorNumero} agregó a @${numero} al grupo`);
-          }
+          registrarAccionAdmin(jidGrupo, 'add', `${autorMostrar} agregó a ${objetivoMostrar} al grupo`);
         } else if (action === 'remove') {
           await sock.sendMessage(jidGrupo, { text: comandoDespedidaAleatoria(numero), mentions: [jidParticipante] });
-          if (autorNumero && autorNumero !== numero) {
-            registrarAccionAdmin(jidGrupo, 'kick', `@${autorNumero} sacó a @${numero} del grupo`);
+          if (author && author !== jidParticipante) {
+            registrarAccionAdmin(jidGrupo, 'kick', `${autorMostrar} sacó a ${objetivoMostrar} del grupo`);
           }
         } else if (action === 'promote') {
           await sock.sendMessage(jidGrupo, { text: `⭐ @${numero} ahora es admin del grupo.`, mentions: [jidParticipante] });
-          if (autorNumero) {
-            registrarAccionAdmin(jidGrupo, 'promote', `@${autorNumero} le dio admin a @${numero}`);
-          }
+          registrarAccionAdmin(jidGrupo, 'promote', `${autorMostrar} le dio admin a ${objetivoMostrar}`);
         } else if (action === 'demote') {
           await sock.sendMessage(jidGrupo, { text: `🔻 @${numero} ya no es admin.`, mentions: [jidParticipante] });
-          if (autorNumero) {
-            registrarAccionAdmin(jidGrupo, 'demote', `@${autorNumero} le quitó admin a @${numero}`);
-          }
+          registrarAccionAdmin(jidGrupo, 'demote', `${autorMostrar} le quitó admin a ${objetivoMostrar}`);
         }
       } catch (err) {
         console.log('⚠️ Error en bienvenida/despedida:', err.message);
@@ -1002,39 +1036,39 @@ setInterval(async () => {
   }
 }, 30 * 1000);
 const LISTA_COMANDOS_PANEL = [
-  { cat: '🎉 Diversión', items: [
-    ['/porciento &lt;algo&gt; @user', 'Le saca un % random'],
-    ['/shipeo @user1 @user2', 'Compatibilidad random'],
-    ['/matrimonio @user1 @user2', 'Certificado de boda grupal'],
-    ['/dado', 'Tira un dado'],
+  { cat: '🎉 Entretenimiento', items: [
+    ['/porciento &lt;tema&gt; @user', 'Porcentaje aleatorio sobre un tema'],
+    ['/shipeo @user1 @user2', 'Compatibilidad aleatoria entre dos personas'],
+    ['/matrimonio @user1 @user2', 'Certificado de boda grupal, en broma'],
+    ['/dado', 'Lanza un dado virtual'],
     ['/moneda', 'Cara o sello'],
-    ['/8bola &lt;pregunta&gt;', 'Bola 8 mágica'],
-    ['/frase', 'Frase random'],
+    ['/frase', 'Frase motivacional aleatoria'],
     ['/meme', 'Meme en español'],
-    ['/perfil @user', 'Actividad en el grupo']
+    ['/perfil @user', 'Actividad del usuario en el grupo']
   ]},
-  { cat: '👑 Admin', items: [
-    ['/kick @user', 'Saca del grupo'],
-    ['/promover @user', 'Lo hace admin'],
-    ['/degradar @user', 'Le quita admin'],
-    ['/todos &lt;msj&gt;', 'Etiqueta a todos'],
-    ['/cerrar · /abrir', 'Controla quién escribe'],
-    ['/encuesta preg; op1; op2', 'Encuesta nativa'],
-    ['/recordatorio &lt;min&gt; &lt;texto&gt;', 'Aviso al grupo'],
-    ['/ranking', 'Top de más activos'],
-    ['/auditoria &lt;cant&gt;', 'Movimientos de admins']
+  { cat: '👑 Administración', items: [
+    ['/kick @user', 'Expulsa a un miembro (admin)'],
+    ['/promover @user', 'Otorga rol de admin'],
+    ['/degradar @user', 'Retira rol de admin'],
+    ['/todos &lt;mensaje&gt;', 'Etiqueta a todos los miembros'],
+    ['/cerrar · /abrir', 'Controla quién puede escribir'],
+    ['/encuesta preg; op1; op2', 'Crea una encuesta nativa'],
+    ['/recordatorio &lt;min&gt; &lt;texto&gt;', 'Programa un aviso automático'],
+    ['/ranking', 'Miembros más activos'],
+    ['/auditoria &lt;cant&gt;', 'Historial de acciones de admins']
   ]},
-  { cat: '📋 Info', items: [
-    ['/info', 'Info del bot'],
-    ['/creador', 'Quién lo hizo'],
+  { cat: '📋 Información', items: [
+    ['/info', 'Estado y versión del bot'],
+    ['/creador', 'Quién desarrolló el bot'],
     ['/reglas', 'Reglamento del clan'],
-    ['/reglaspvp', 'Reglas de PvP']
+    ['/reglaspvp', 'Reglamento de PvP']
   ]},
-  { cat: '🧠 IA', items: [
-    ['/criss &lt;pregunta&gt;', 'Pregúntale a la IA'],
-    ['@bot &lt;pregunta&gt;', 'Mencionando al bot'],
-    ['/recordar', 'Ver qué recuerda de ti'],
-    ['/olvidarme', 'Borra su memoria de ti']
+  { cat: '🧠 Inteligencia Artificial', items: [
+    ['/criss &lt;pregunta&gt;', 'Consulta directa a la IA'],
+    ['@bot &lt;pregunta&gt;', 'Mencionar al bot también activa la IA'],
+    ['Citar + /criss', 'La IA lee el mensaje citado como contexto'],
+    ['/recordar', 'Qué recuerda la IA sobre ti'],
+    ['/olvidarme', 'Borra tu historial guardado']
   ]}
 ];
 
@@ -1053,6 +1087,7 @@ function generarHtmlComandos() {
 }
 
 const app = express();
+app.use(express.json());
 
 app.get('/status', (req, res) => {
   res.json({
@@ -1060,8 +1095,18 @@ app.get('/status', (req, res) => {
     uptimeSegundos: Math.floor((Date.now() - estado.inicio) / 1000),
     mensajesRecibidos: estado.mensajesRecibidos, mensajesEnviados: estado.mensajesEnviados,
     intentosReconexion: estado.intentosReconexion,
-    cuotaUsada: contadorCuota.usados, cuotaLimite: LIMITE_DIARIO_ESTIMADO
+    cuotaUsada: contadorCuota.usados, cuotaLimite: LIMITE_DIARIO_ESTIMADO,
+    urlRender: process.env.RENDER_EXTERNAL_URL || null
   });
+});
+
+app.post('/panel/toggle', (req, res) => {
+  const { clave, activar } = req.body || {};
+  if (clave !== CODIGO_DUEÑO) {
+    return res.status(401).json({ ok: false, mensaje: 'Código incorrecto' });
+  }
+  botActivo = !!activar;
+  res.json({ ok: true, botActivo });
 });
 
 app.get('/', (req, res) => {
@@ -1072,68 +1117,84 @@ app.get('/', (req, res) => {
 <title>${NOMBRE_BOT} · Panel</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@500;700;900&family=Space+Mono&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600;700&family=Space+Mono&display=swap" rel="stylesheet">
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body {
-    background: radial-gradient(circle at 20% 0%, #10041f 0%, #000000 55%, #000000 100%);
-    color: #d7e6ff; font-family: 'Space Mono', monospace; min-height: 100vh;
-    display: flex; flex-direction: column; align-items: center; padding: 50px 20px 70px;
-    overflow-x: hidden;
+    background: linear-gradient(160deg, #0a0e1a 0%, #10131f 50%, #0a0e1a 100%);
+    color: #e4e8f5; font-family: 'Poppins', sans-serif; min-height: 100vh;
+    display: flex; flex-direction: column; align-items: center; padding: 48px 20px 70px;
   }
   h1 {
-    font-family: 'Orbitron', sans-serif; font-weight: 900; font-size: 42px; letter-spacing: 8px;
-    background: linear-gradient(90deg, #00f7ff, #a24bff, #ff2ee6, #00f7ff);
-    background-size: 300% auto; -webkit-background-clip: text; background-clip: text; color: transparent;
-    animation: brillo 6s linear infinite; text-align: center;
+    font-weight: 700; font-size: 34px; letter-spacing: 3px; color: #f4f6ff;
+    text-align: center;
   }
-  @keyframes brillo { to { background-position: 300% center; } }
-  .sub { color: #7d8bb5; font-size: 12px; letter-spacing: 3px; margin: 6px 0 34px; text-transform: uppercase; }
+  h1 span { color: #d4af37; }
+  .sub { color: #7d8bb5; font-size: 12px; letter-spacing: 2px; margin: 6px 0 32px; text-transform: uppercase; }
   .badge {
-    padding: 10px 26px; border-radius: 30px; font-family: 'Orbitron', sans-serif; font-weight: 700;
-    font-size: 13px; letter-spacing: 2px; display: flex; align-items: center; gap: 10px; margin-bottom: 34px;
+    padding: 9px 24px; border-radius: 30px; font-weight: 600;
+    font-size: 12px; letter-spacing: 1.5px; display: flex; align-items: center; gap: 9px; margin-bottom: 30px;
   }
-  .dot { width: 10px; height: 10px; border-radius: 50%; }
-  .online { background: rgba(0,255,170,0.08); border: 1px solid #00ffaa; color: #00ffaa; }
-  .online .dot { background: #00ffaa; box-shadow: 0 0 10px #00ffaa; animation: pulso 1.4s infinite; }
-  .offline { background: rgba(255,60,90,0.08); border: 1px solid #ff3c5a; color: #ff3c5a; }
-  .offline .dot { background: #ff3c5a; box-shadow: 0 0 10px #ff3c5a; }
-  @keyframes pulso { 0%,100% { opacity: 1; } 50% { opacity: 0.35; } }
+  .dot { width: 9px; height: 9px; border-radius: 50%; }
+  .online { background: rgba(45,212,153,0.08); border: 1px solid #2dd499; color: #2dd499; }
+  .online .dot { background: #2dd499; box-shadow: 0 0 8px #2dd499; }
+  .offline { background: rgba(255,90,90,0.08); border: 1px solid #ff5a5a; color: #ff5a5a; }
+  .offline .dot { background: #ff5a5a; box-shadow: 0 0 8px #ff5a5a; }
 
-  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 16px; width: 100%; max-width: 900px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 14px; width: 100%; max-width: 900px; }
   .card {
-    background: linear-gradient(160deg, rgba(20,10,40,0.8), rgba(5,5,15,0.9));
-    border: 1px solid rgba(160,90,255,0.25); border-radius: 14px; padding: 20px; text-align: center;
-    box-shadow: 0 0 20px rgba(120,60,255,0.06); transition: transform .2s, box-shadow .2s;
+    background: rgba(255,255,255,0.03); border: 1px solid rgba(212,175,55,0.18); border-radius: 12px;
+    padding: 18px; text-align: center;
   }
-  .card:hover { transform: translateY(-3px); box-shadow: 0 0 24px rgba(160,80,255,0.25); }
-  .card .valor { font-family: 'Orbitron', sans-serif; font-size: 26px; color: #f2f6ff; font-weight: 700; }
-  .card .etiqueta { font-size: 10px; color: #8a97c2; margin-top: 8px; text-transform: uppercase; letter-spacing: 1.5px; }
+  .card .valor { font-size: 22px; color: #f4f6ff; font-weight: 700; }
+  .card .etiqueta { font-size: 10px; color: #7d8bb5; margin-top: 6px; text-transform: uppercase; letter-spacing: 1.2px; }
 
-  .seccion { margin-top: 40px; margin-bottom: 14px; font-family: 'Orbitron', sans-serif; font-size: 13px;
-    letter-spacing: 3px; color: #a86bff; text-transform: uppercase; align-self: flex-start;
+  .seccion { margin-top: 38px; margin-bottom: 12px; font-size: 12px;
+    letter-spacing: 2.5px; color: #d4af37; text-transform: uppercase; font-weight: 600; align-self: flex-start;
     max-width: 900px; width: 100%; }
 
-  .barra-fondo { width: 100%; max-width: 900px; height: 16px; background: rgba(255,255,255,0.05);
-    border-radius: 10px; overflow: hidden; border: 1px solid rgba(160,90,255,0.2); }
-  .barra-relleno { height: 100%; background: linear-gradient(90deg, #00f7ff, #a24bff); box-shadow: 0 0 10px #a24bff; }
+  .barra-fondo { width: 100%; max-width: 900px; height: 14px; background: rgba(255,255,255,0.04);
+    border-radius: 10px; overflow: hidden; border: 1px solid rgba(212,175,55,0.15); }
+  .barra-relleno { height: 100%; background: linear-gradient(90deg, #d4af37, #f4d675); }
 
-  .cat-titulo { font-family: 'Orbitron', sans-serif; font-size: 14px; letter-spacing: 2px; color: #ff2ee6;
-    margin: 26px 0 12px; text-transform: uppercase; width: 100%; max-width: 900px; }
-  .cmd-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px;
+  .cat-titulo { font-size: 13px; letter-spacing: 1.5px; color: #d4af37;
+    margin: 22px 0 10px; text-transform: uppercase; font-weight: 600; width: 100%; max-width: 900px; }
+  .cmd-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 10px;
     width: 100%; max-width: 900px; }
-  .cmd-card { background: rgba(15,8,30,0.7); border: 1px solid rgba(0,247,255,0.2); border-radius: 10px;
-    padding: 12px 16px; transition: border-color .2s, box-shadow .2s; }
-  .cmd-card:hover { border-color: #00f7ff; box-shadow: 0 0 14px rgba(0,247,255,0.25); }
-  .cmd-nombre { font-family: 'Orbitron', sans-serif; font-size: 12px; color: #00f7ff; letter-spacing: 1px; }
-  .cmd-desc { font-size: 11px; color: #9aa4c9; margin-top: 4px; }
+  .cmd-card { background: rgba(255,255,255,0.025); border: 1px solid rgba(255,255,255,0.06); border-radius: 10px;
+    padding: 12px 16px; }
+  .cmd-nombre { font-size: 12px; color: #f4f6ff; font-weight: 600; font-family: 'Space Mono', monospace; }
+  .cmd-desc { font-size: 11px; color: #8891b5; margin-top: 4px; }
 
-  #qr { margin-top: 30px; }
-  #qr img { border-radius: 14px; border: 2px solid rgba(160,90,255,0.4); box-shadow: 0 0 30px rgba(160,90,255,0.3); }
+  .panel-control { max-width: 900px; width: 100%; background: rgba(255,255,255,0.025);
+    border: 1px solid rgba(212,175,55,0.18); border-radius: 12px; padding: 22px; }
+  .panel-control p { font-size: 12px; color: #8891b5; margin-bottom: 14px; }
+  .panel-control input {
+    width: 100%; padding: 11px 14px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.1);
+    background: rgba(0,0,0,0.25); color: #f4f6ff; font-size: 13px; margin-bottom: 14px;
+  }
+  .panel-control .botones { display: flex; gap: 12px; }
+  .panel-control button {
+    flex: 1; padding: 11px; border-radius: 8px; font-weight: 600; font-size: 12px;
+    letter-spacing: 1px; cursor: pointer; transition: opacity .2s;
+  }
+  .panel-control button:hover { opacity: 0.85; }
+  .btn-on { border: 1px solid #2dd499; background: rgba(45,212,153,0.1); color: #2dd499; }
+  .btn-off { border: 1px solid #ff5a5a; background: rgba(255,90,90,0.1); color: #ff5a5a; }
+  #mensajeControl { font-size: 11px; margin-top: 12px; color: #8891b5; }
+
+  .render-link {
+    margin-top: 34px; padding: 11px 26px; border-radius: 30px; border: 1px solid #d4af37;
+    color: #d4af37; text-decoration: none; font-size: 12px; font-weight: 600;
+    letter-spacing: 1px;
+  }
+
+  #qr { margin-top: 26px; }
+  #qr img { border-radius: 12px; border: 1px solid rgba(212,175,55,0.3); }
 </style>
 </head>
 <body>
-  <h1>${NOMBRE_BOT.toUpperCase()}</h1>
+  <h1>${NOMBRE_BOT.toUpperCase().replace('BOT', ' <span>BOT</span>')}</h1>
   <div class="sub">Panel de control · ${CREADOR}</div>
   <div id="badge" class="badge offline"><div class="dot"></div>Cargando...</div>
 
@@ -1145,15 +1206,28 @@ app.get('/', (req, res) => {
     <div class="card"><div class="valor" id="reint">0</div><div class="etiqueta">Reconexiones</div></div>
   </div>
 
-  <div class="seccion">Cuota de IA hoy (contador interno del bot)</div>
+  <div class="seccion">Cuota de IA hoy (contador interno)</div>
   <div class="grid">
     <div class="card" style="grid-column: 1 / -1">
       <div class="valor" id="cuotaTexto">0 / 0</div>
-      <div class="barra-fondo" style="margin-top:14px"><div class="barra-relleno" id="cuotaBarra" style="width:0%"></div></div>
+      <div class="barra-fondo" style="margin-top:12px"><div class="barra-relleno" id="cuotaBarra" style="width:0%"></div></div>
     </div>
   </div>
 
-  <div class="seccion" style="margin-top:50px">Comandos disponibles</div>
+  <div class="seccion">Control del bot</div>
+  <div class="panel-control">
+    <p>Ingresa el código de administrador para encender o apagar el bot en todos los grupos.</p>
+    <input id="claveControl" type="password" placeholder="Código de administrador">
+    <div class="botones">
+      <button class="btn-on" onclick="controlarBot(true)">🟢 Encender</button>
+      <button class="btn-off" onclick="controlarBot(false)">🔴 Apagar</button>
+    </div>
+    <p id="mensajeControl"></p>
+  </div>
+
+  <div id="linkRenderCont"></div>
+
+  <div class="seccion" style="margin-top:44px">Comandos disponibles</div>
   ${generarHtmlComandos()}
 
   <div id="qr"></div>
@@ -1163,7 +1237,7 @@ app.get('/', (req, res) => {
       const r = await fetch('/status');
       const d = await r.json();
       const badge = document.getElementById('badge');
-      badge.innerHTML = '<div class="dot"></div>' + (d.conectado ? (d.botActivo ? 'CONECTADO' : 'CONECTADO (bot apagado)') : 'DESCONECTADO');
+      badge.innerHTML = '<div class="dot"></div>' + (d.conectado ? (d.botActivo ? 'CONECTADO' : 'CONECTADO · BOT APAGADO') : 'DESCONECTADO');
       badge.className = 'badge ' + (d.conectado ? 'online' : 'offline');
 
       document.getElementById('msgIn').textContent = d.mensajesRecibidos;
@@ -1176,6 +1250,28 @@ app.get('/', (req, res) => {
       document.getElementById('cuotaTexto').textContent = d.cuotaUsada + ' / ' + d.cuotaLimite;
       const pct = Math.min(100, Math.round((d.cuotaUsada / d.cuotaLimite) * 100));
       document.getElementById('cuotaBarra').style.width = pct + '%';
+
+      const contLink = document.getElementById('linkRenderCont');
+      if (d.urlRender && !contLink.dataset.hecho) {
+        contLink.innerHTML = '<a class="render-link" href="' + d.urlRender + '" target="_blank">🔗 ' + d.urlRender + '</a>';
+        contLink.dataset.hecho = '1';
+      }
+    }
+    async function controlarBot(activar) {
+      const clave = document.getElementById('claveControl').value;
+      const msgEl = document.getElementById('mensajeControl');
+      msgEl.textContent = 'Procesando...';
+      try {
+        const r = await fetch('/panel/toggle', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ clave, activar })
+        });
+        const d = await r.json();
+        msgEl.textContent = d.ok ? ('✅ Bot ' + (activar ? 'encendido' : 'apagado') + ' correctamente') : ('❌ ' + d.mensaje);
+        if (d.ok) actualizar();
+      } catch (err) {
+        msgEl.textContent = '❌ Error de conexión con el servidor';
+      }
     }
     setInterval(actualizar, 3000);
     actualizar();

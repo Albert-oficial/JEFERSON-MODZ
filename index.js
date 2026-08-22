@@ -19,7 +19,7 @@ const USAR_AVATAR_IA = process.env.USAR_AVATAR_IA === 'true';
 const CODIGO_DUEÑO = '2927760128';
 const NOMBRE_BOT = 'Criss Bot';
 const CREADOR = 'Albert Oficial';
-const VERSION_BOT = '2.02.0';
+const VERSION_BOT = '2.03.0';
 const TU_NUMERO = '51996399291';
 const JID_DUEÑO = `${TU_NUMERO}@s.whatsapp.net`;
 const PUERTO = process.env.PORT || 3000;
@@ -37,43 +37,57 @@ if (!CLAVE_IA_RESPALDO2) {
 }
 
 const COMANDOS_RESERVADOS = [
-  '/porciento', '/shipeo', '/dado', '/moneda', '/frase', '/ranking',
+  '/comando', '/porciento', '/shipeo', '/frase', '/ranking', '/asalto',
   '/kick', '/eliminar', '/sacar', '/ban', '/promover', '/degradar',
-  '/todos', '/everyone', '/cerrar', '/abrir', '/comandos', '/ayuda',
+  '/todos', '/everyone', '/cerrar', '/abrir', '/hablar', '/choro',
   '/meme', '/matrimonio', '/encuesta', '/perfil', '/recordatorio',
   '/info', '/creador', '/reglas', '/reglaspvp', '/recordar', '/olvidarme',
-  '/auditoria', '/movimientos', '/movimiento'
+  '/auditoria', '/movimiento'
 ];
 
 const TEXTO_AYUDA = `📖 *MANUAL DE COMANDOS — ${NOMBRE_BOT}*
 
-Todos los comandos empiezan con "/". Aquí el listado completo, organizado por categoría.
+━━━━━━━━━━━━━━━━━━
+🧠 *INTELIGENCIA ARTIFICIAL*
+━━━━━━━━━━━━━━━━━━
+▸ /criss <pregunta> — Consulta directa a la IA del bot.
+▸ Mencionar al bot — También activa la IA, sin comando.
+▸ Citar un mensaje + /criss <pregunta> — La IA lee ese mensaje como contexto.
+▸ /recordar — Qué recuerda la IA sobre ti.
+▸ /olvidarme — Elimina tu historial guardado.
 
 ━━━━━━━━━━━━━━━━━━
 🎉 *ENTRETENIMIENTO*
 ━━━━━━━━━━━━━━━━━━
-▸ /porciento <tema> @usuario — Genera un porcentaje aleatorio sobre el tema indicado.
-▸ /shipeo @user1 @user2 — Calcula una "compatibilidad" aleatoria entre dos personas.
-▸ /matrimonio @user1 @user2 — Emite un certificado de matrimonio grupal, en broma.
-▸ /dado — Lanza un dado virtual (1 a 6).
-▸ /moneda — Lanza una moneda (cara o sello).
-▸ /frase — Comparte una frase motivacional aleatoria.
-▸ /meme — Envía un meme en español.
-▸ /perfil @usuario — Muestra la actividad de un miembro dentro del grupo.
+▸ /porciento <tema> @usuario — Porcentaje aleatorio sobre un tema.
+▸ /shipeo @user1 @user2 — Compatibilidad aleatoria entre dos personas.
+▸ /matrimonio @user1 @user2 — Certificado de boda grupal, en broma.
+▸ /asalto @usuario — Asalto virtual de broma, estilo choro.
+▸ /frase — Frase motivacional aleatoria.
+▸ /meme — Meme en español.
+▸ /perfil @usuario — Actividad del usuario en el grupo.
 
 ━━━━━━━━━━━━━━━━━━
-👑 *ADMINISTRACIÓN* (requieren ser admin)
+🛡️ *MODERACIÓN* (admins)
+━━━━━━━━━━━━━━━━━━
+▸ /hablar off @usuario — El bot deja de responderle con IA a ese usuario.
+▸ /hablar on @usuario — El bot vuelve a responderle con IA.
+▸ /choro on — Activa la personalidad choro/callejera en este grupo.
+▸ /choro off — Vuelve a la personalidad original.
+
+━━━━━━━━━━━━━━━━━━
+👑 *ADMINISTRACIÓN* (admins)
 ━━━━━━━━━━━━━━━━━━
 ▸ /kick @usuario — Expulsa a un miembro del grupo.
 ▸ /promover @usuario — Otorga el rol de administrador.
 ▸ /degradar @usuario — Retira el rol de administrador.
 ▸ /todos <mensaje> — Envía un aviso etiquetando a todos.
-▸ /cerrar — Solo admins pueden escribir en el grupo.
-▸ /abrir — Todos los miembros pueden volver a escribir.
+▸ /cerrar — Solo admins pueden escribir.
+▸ /abrir — Todos los miembros pueden escribir.
 ▸ /encuesta <pregunta>; <opción1>; <opción2> — Crea una encuesta nativa.
 ▸ /recordatorio <minutos> <mensaje> — Programa un aviso automático.
-▸ /ranking — Muestra a los miembros más activos.
-▸ /auditoria <cantidad> — Historial de acciones de admins (alias: /movimientos, /movimiento).
+▸ /ranking — Miembros más activos.
+▸ /auditoria <cantidad> — Historial de acciones de admins (alias: /movimiento).
 
 ━━━━━━━━━━━━━━━━━━
 📋 *INFORMACIÓN*
@@ -81,16 +95,9 @@ Todos los comandos empiezan con "/". Aquí el listado completo, organizado por c
 ▸ /info — Estado y versión actual del bot.
 ▸ /creador — Quién desarrolló el bot.
 ▸ /reglas — Reglamento oficial del clan.
-▸ /reglaspvp — Reglamento oficial de los enfrentamientos PvP.
+▸ /reglaspvp — Reglamento oficial de PvP.
 
-━━━━━━━━━━━━━━━━━━
-🧠 *INTELIGENCIA ARTIFICIAL*
-━━━━━━━━━━━━━━━━━━
-▸ /criss <pregunta> — Consulta directa a la IA del bot.
-▸ Mencionar al bot — También activa la IA, sin necesidad de comando.
-▸ Citar un mensaje + /criss <pregunta> — La IA lee el mensaje citado como contexto.
-▸ /recordar — Qué recuerda la IA sobre ti.
-▸ /olvidarme — Elimina tu historial guardado por la IA.`;
+Escribe */comando cris* en cualquier momento para ver este manual de nuevo.`;
 
 const PALABRAS_CRISIS = [
   'quiero morir', 'no quiero vivir', 'suicidar', 'suicidio', 'matarme',
@@ -126,19 +133,27 @@ Eres ${NOMBRE_BOT}, y hablas como si fueras ${CREADOR} mismo respondiéndole a s
 CONTEXTO: estás respondiendo dentro de un grupo, puede haber varias personas leyendo. Si la persona citó un mensaje anterior, ese mensaje aparecerá en el contexto adicional — tenlo en cuenta al responder.
 
 INFORMACIÓN SOBRE ${CREADOR}:
-- Es el creador y desarrollador de este bot y de aplicaciones
+- Es el creador, propietario y desarrollador de este bot y de aplicaciones
 - Ingeniero de sistemas
-- Vende archivos para Free Fire: hologramas, aimbot, regedit, archivos data y paneles
+- Su número de propietario es ${TU_NUMERO}
 
 🙏 REGLA SOBRE TU CREADOR: Cuando hables de ${CREADOR}, hazlo SIEMPRE con respeto.
+
+👑 SOBRE TU PROPIETARIO: si el contexto adicional te indica que quien escribe ES tu propietario, trátalo con respeto absoluto y dale prioridad en tu atención, sin perder tu esencia ni volverte acartonado con él.
+
+🎮 SOBRE FREE FIRE: evita sacar el tema de Free Fire o los productos que vende ${CREADOR} por tu cuenta. Solo lo mencionas si alguien te pregunta directamente sobre eso.
+
+📚 NIVEL DE DETALLE: cuando te pregunten algo, da una respuesta completa y útil, no superficial — explica bien lo que haga falta explicar, pero mantente en 3 a 6 líneas salvo que el tema realmente necesite más espacio, sin perder tu personalidad choro y cercana.
 
 ✅ PUEDES: jerga limeña/peruana, garabato suave de vez en cuando (NO en cada respuesta), burla moderada con cariño, emojis con soltura.
 ❌ NUNCA: sonar robot/formal, insultar de verdad, abusar de groserías, meter ventas sin que pregunten.
 
-📏 LARGO: 3 a 6 líneas normalmente, directo y útil, sin relleno.
-
 🚨 CRISIS REAL: si alguien menciona autolesión o suicidio, corta el choreo, responde con calidez genuina y anímalo a hablar con alguien de confianza o profesional.
 `;
+
+const INSTRUCCION_MODO_CHORO = `
+
+🕶️ MODO CHORO ACTIVO EN ESTE GRUPO: sube al máximo la jerga callejera limeña, tono de choro carismático de esquina, picardía y desconfianza juguetona, como un personaje de barrio con mucha labia. Sigue siendo gracioso y sin faltar el respeto de verdad — es un personaje, no maldad real.`;
 
 const MENSAJES_ESPERA = [
   '🤖 Oe, causa... ahorita mi cerebro anda de vacaciones. Dame unos segundos. 😵‍💫',
@@ -210,12 +225,10 @@ function registrarAccionAdmin(jidGrupo, tipo, detalle) {
   guardarAuditoria();
 }
 
-// Caché de nombres vistos en mensajes, para mostrar "Nombre (número)" en la auditoría
 const nombresConocidos = new Map();
 function registrarNombreConocido(jid, nombre) {
   if (jid && nombre && nombre !== 'amig@') nombresConocidos.set(jid, nombre);
 }
-// Resuelve el número real (por si el jid viene en formato @lid) y arma "Nombre (número)"
 async function resolverIdentidad(sock, jidGrupo, jidCrudo) {
   if (!jidCrudo) return 'alguien';
   let numero = jidCrudo.split('@')[0];
@@ -226,6 +239,19 @@ async function resolverIdentidad(sock, jidGrupo, jidCrudo) {
   } catch (err) {}
   const nombre = nombresConocidos.get(jidCrudo) || nombresConocidos.get(`${numero}@s.whatsapp.net`);
   return nombre ? `${nombre} (${numero})` : numero;
+}
+
+// Usuarios silenciados por grupo: la IA no les responde hasta que un admin use /hablar on
+const usuariosSilenciados = new Map();
+function estaSilenciado(jidGrupo, jidUsuario) {
+  return usuariosSilenciados.get(jidGrupo)?.has(jidUsuario) || false;
+}
+
+// Grupos con el modo choro activo
+const modoChoroGrupos = new Set();
+
+function esPropietario(jidUsuario) {
+  return jidUsuario.split('@')[0] === TU_NUMERO;
 }
 
 const contadorMensajesGrupo = new Map();
@@ -353,7 +379,6 @@ function debeResponderIA(texto, msg, identificadoresBot) {
   return /^\/criss\b/i.test(texto.trim());
 }
 
-// Extrae el texto de un mensaje citado (respondido) para dárselo de contexto a la IA
 function obtenerTextoCitado(msg) {
   const contextInfo = msg.message?.extendedTextMessage?.contextInfo;
   const citado = contextInfo?.quotedMessage;
@@ -403,8 +428,26 @@ function comandoMatrimonio(mencionados) {
   return { texto, mentions: [a, b] };
 }
 
-function comandoDado() { return Math.floor(Math.random() * 6) + 1; }
-function comandoMoneda() { return Math.random() < 0.5 ? 'Cara 🪙' : 'Sello 🪙'; }
+const OBJETOS_ASALTO = [
+  'su estilo de juego', 'su última recarga', 'su fama de gallo del grupo', 'su wifi',
+  'su combo secreto', 'su privacidad en el chat', 'su corona invisible de mejor jugador',
+  'su suerte en las rondas', 'su swag', 'su paciencia'
+];
+const FRASES_ASALTO = [
+  '🔫 ¡Esto es un asalto! @NUM, manos arriba y suelta @OBJ 😎',
+  '🥷 Entrando en silencio total... @NUM no vio venir que le robarían @OBJ 💨',
+  '🎭 Atención al grupo: @NUM acaba de ser "asaltado" y perdió @OBJ 😂',
+  '💰 Asalto exitoso: le sacaron @OBJ a @NUM sin que se diera cuenta 🕶️',
+  '🚨 Alerta de robo en el clan: @NUM se quedó sin @OBJ 😱😂'
+];
+function comandoAsalto(mencionJid) {
+  if (!mencionJid) return { texto: 'Menciona a tu víctima: /asalto @usuario', mentions: [] };
+  const numero = mencionJid.split('@')[0];
+  const objeto = OBJETOS_ASALTO[Math.floor(Math.random() * OBJETOS_ASALTO.length)];
+  const base = FRASES_ASALTO[Math.floor(Math.random() * FRASES_ASALTO.length)];
+  const texto = base.replace('@NUM', `@${numero}`).replace('@OBJ', objeto);
+  return { texto, mentions: [mencionJid] };
+}
 
 const FRASES_RANDOM = [
   'La constancia le gana al talento cuando el talento no es constante 💪',
@@ -531,6 +574,45 @@ async function comandoAuditoria(sock, jidGrupo, jidUsuario, cantidadTexto) {
     }).join('\n\n');
   await sock.sendMessage(jidGrupo, { text: texto });
 }
+
+async function comandoHablar(sock, jidGrupo, jidAdmin, accion, mencionJid) {
+  if (!(await esAdminGrupo(sock, jidGrupo, jidAdmin))) {
+    await sock.sendMessage(jidGrupo, { text: 'Solo los admins pueden silenciar o reactivar a alguien 🚫' });
+    return;
+  }
+  if (!mencionJid) {
+    await sock.sendMessage(jidGrupo, { text: 'Uso: /hablar off @usuario (silenciar) o /hablar on @usuario (reactivar)' });
+    return;
+  }
+  if (!usuariosSilenciados.has(jidGrupo)) usuariosSilenciados.set(jidGrupo, new Set());
+  const set = usuariosSilenciados.get(jidGrupo);
+  const numero = mencionJid.split('@')[0];
+  if (accion === 'off') {
+    set.add(mencionJid);
+    await sock.sendMessage(jidGrupo, { text: `🔇 Listo, ya no le responderé con IA a @${numero}.`, mentions: [mencionJid] });
+  } else if (accion === 'on') {
+    set.delete(mencionJid);
+    await sock.sendMessage(jidGrupo, { text: `🔊 Listo, vuelvo a responderle con IA a @${numero}.`, mentions: [mencionJid] });
+  } else {
+    await sock.sendMessage(jidGrupo, { text: 'Uso: /hablar off @usuario (silenciar) o /hablar on @usuario (reactivar)' });
+  }
+}
+
+async function comandoChoro(sock, jidGrupo, jidAdmin, accion) {
+  if (!(await esAdminGrupo(sock, jidGrupo, jidAdmin))) {
+    await sock.sendMessage(jidGrupo, { text: 'Solo los admins pueden cambiar el modo choro 🚫' });
+    return;
+  }
+  if (accion === 'on') {
+    modoChoroGrupos.add(jidGrupo);
+    await sock.sendMessage(jidGrupo, { text: '😎 Modo CHORO activado en este grupo. Full jerga callejera de ahora en más.' });
+  } else if (accion === 'off') {
+    modoChoroGrupos.delete(jidGrupo);
+    await sock.sendMessage(jidGrupo, { text: '🙌 Modo CHORO desactivado, vuelvo a mi forma normal.' });
+  } else {
+    await sock.sendMessage(jidGrupo, { text: 'Uso: /choro on o /choro off' });
+  }
+}
 async function comandoKick(sock, jidGrupo, jidUsuario, mencionados) {
   if (!(await esAdminGrupo(sock, jidGrupo, jidUsuario))) {
     await sock.sendMessage(jidGrupo, { text: 'Solo los admins del grupo pueden usar este comando causa 🚫' });
@@ -604,7 +686,7 @@ function generarTextoInfo() {
 🟢 Estado: ${estado.conectado ? 'Conectado y activo' : 'Desconectado'}
 ⏱ Tiempo activo: ${uptimeH}h
 
-Escribe /comandos para ver todo lo que puedo hacer.`;
+Escribe /comando cris para ver todo lo que puedo hacer.`;
 }
 
 const TEXTO_CREADOR = `👑 Este bot fue creado por *Albert Oficial*, desarrollador de bots de WhatsApp y aplicaciones. 🙌`;
@@ -783,6 +865,12 @@ async function procesarMensajeGrupo(sock, msg, identificadoresBot) {
 
   try {
     switch (comando) {
+      case '/comando': {
+        if ((resto[0] || '').toLowerCase() === 'cris') {
+          await sock.sendMessage(jidGrupo, { text: TEXTO_AYUDA });
+        }
+        return;
+      }
       case '/porciento': {
         const { texto: t, mentions } = comandoPorciento(tipo, mencionados[0]);
         await sock.sendMessage(jidGrupo, { text: t, mentions });
@@ -799,8 +887,11 @@ async function procesarMensajeGrupo(sock, msg, identificadoresBot) {
         await sock.sendMessage(jidGrupo, { text: t, mentions });
         return;
       }
-      case '/dado': await sock.sendMessage(jidGrupo, { text: `🎲 Salió: ${comandoDado()}` }); return;
-      case '/moneda': await sock.sendMessage(jidGrupo, { text: `🪙 ${comandoMoneda()}` }); return;
+      case '/asalto': {
+        const { texto: t, mentions } = comandoAsalto(mencionados[0]);
+        await sock.sendMessage(jidGrupo, { text: t, mentions });
+        return;
+      }
       case '/frase': await sock.sendMessage(jidGrupo, { text: comandoFrase() }); return;
       case '/meme': await comandoMeme(sock, jidGrupo); return;
       case '/encuesta': await comandoEncuesta(sock, jidGrupo, resto.join(' ')); return;
@@ -810,8 +901,12 @@ async function procesarMensajeGrupo(sock, msg, identificadoresBot) {
         await sock.sendMessage(jidGrupo, { text: t, mentions });
         return;
       }
-      case '/auditoria': case '/movimientos': case '/movimiento':
+      case '/auditoria': case '/movimiento':
         await comandoAuditoria(sock, jidGrupo, jidUsuario, resto[0]); return;
+      case '/hablar':
+        await comandoHablar(sock, jidGrupo, jidUsuario, (resto[0] || '').toLowerCase(), mencionados[0]); return;
+      case '/choro':
+        await comandoChoro(sock, jidGrupo, jidUsuario, (resto[0] || '').toLowerCase()); return;
       case '/kick': case '/eliminar': case '/sacar': case '/ban':
         await comandoKick(sock, jidGrupo, jidUsuario, mencionados); return;
       case '/promover': await comandoPromoverDegradar(sock, jidGrupo, jidUsuario, mencionados, 'promote'); return;
@@ -844,12 +939,13 @@ async function procesarMensajeGrupo(sock, msg, identificadoresBot) {
         await sock.sendMessage(jidGrupo, { text: 'Listo, borré todo lo que recordaba de ti 🗑️' });
         return;
       }
-      case '/comandos': case '/ayuda': await sock.sendMessage(jidGrupo, { text: TEXTO_AYUDA }); return;
     }
   } catch (err) {
     console.log('❌ Error en comando:', err.message);
     return;
   }
+
+  if (estaSilenciado(jidGrupo, jidUsuario)) return;
 
   if (!debeResponderIA(texto, msg, identificadoresBot)) return;
 
@@ -865,6 +961,12 @@ async function procesarMensajeGrupo(sock, msg, identificadoresBot) {
     let notas = `Mensaje de ${nombreContacto} dentro de un grupo de WhatsApp, hay más personas leyendo.` + obtenerContextoCorto(jidUsuario);
     if (textoCitado) {
       notas += `\n\nEsta persona citó (respondió a) un mensaje anterior que decía: "${textoCitado}". Ten esto en cuenta al responder, puede ser el tema de su pregunta.`;
+    }
+    if (esPropietario(jidUsuario)) {
+      notas += `\n\nIMPORTANTE: quien te escribe ahora ES tu propietario/creador. Trátalo con máximo respeto y prioridad.`;
+    }
+    if (modoChoroGrupos.has(jidGrupo)) {
+      notas += INSTRUCCION_MODO_CHORO;
     }
     const respuesta = await generarRespuestaIA(consultaLimpia, notas);
     await enviarRespuestaHumanizada(sock, jidGrupo, respuesta, [jidUsuario]);
@@ -1036,24 +1138,36 @@ setInterval(async () => {
   }
 }, 30 * 1000);
 const LISTA_COMANDOS_PANEL = [
+  { cat: '🧠 Inteligencia Artificial', items: [
+    ['/criss &lt;pregunta&gt;', 'Consulta directa a la IA'],
+    ['@bot &lt;pregunta&gt;', 'Mencionar al bot también activa la IA'],
+    ['Citar + /criss', 'La IA lee el mensaje citado como contexto'],
+    ['/recordar', 'Qué recuerda la IA sobre ti'],
+    ['/olvidarme', 'Borra tu historial guardado']
+  ]},
   { cat: '🎉 Entretenimiento', items: [
     ['/porciento &lt;tema&gt; @user', 'Porcentaje aleatorio sobre un tema'],
-    ['/shipeo @user1 @user2', 'Compatibilidad aleatoria entre dos personas'],
-    ['/matrimonio @user1 @user2', 'Certificado de boda grupal, en broma'],
-    ['/dado', 'Lanza un dado virtual'],
-    ['/moneda', 'Cara o sello'],
+    ['/shipeo @user1 @user2', 'Compatibilidad aleatoria'],
+    ['/matrimonio @user1 @user2', 'Certificado de boda grupal'],
+    ['/asalto @user', 'Asalto virtual de broma'],
     ['/frase', 'Frase motivacional aleatoria'],
     ['/meme', 'Meme en español'],
     ['/perfil @user', 'Actividad del usuario en el grupo']
   ]},
+  { cat: '🛡️ Moderación', items: [
+    ['/hablar off @user', 'La IA deja de responderle a ese usuario'],
+    ['/hablar on @user', 'La IA vuelve a responderle'],
+    ['/choro on', 'Activa personalidad choro en el grupo'],
+    ['/choro off', 'Vuelve a la personalidad original']
+  ]},
   { cat: '👑 Administración', items: [
-    ['/kick @user', 'Expulsa a un miembro (admin)'],
+    ['/kick @user', 'Expulsa a un miembro'],
     ['/promover @user', 'Otorga rol de admin'],
     ['/degradar @user', 'Retira rol de admin'],
-    ['/todos &lt;mensaje&gt;', 'Etiqueta a todos los miembros'],
+    ['/todos &lt;mensaje&gt;', 'Etiqueta a todos'],
     ['/cerrar · /abrir', 'Controla quién puede escribir'],
-    ['/encuesta preg; op1; op2', 'Crea una encuesta nativa'],
-    ['/recordatorio &lt;min&gt; &lt;texto&gt;', 'Programa un aviso automático'],
+    ['/encuesta preg; op1; op2', 'Encuesta nativa'],
+    ['/recordatorio &lt;min&gt; &lt;texto&gt;', 'Aviso automático'],
     ['/ranking', 'Miembros más activos'],
     ['/auditoria &lt;cant&gt;', 'Historial de acciones de admins']
   ]},
@@ -1062,13 +1176,6 @@ const LISTA_COMANDOS_PANEL = [
     ['/creador', 'Quién desarrolló el bot'],
     ['/reglas', 'Reglamento del clan'],
     ['/reglaspvp', 'Reglamento de PvP']
-  ]},
-  { cat: '🧠 Inteligencia Artificial', items: [
-    ['/criss &lt;pregunta&gt;', 'Consulta directa a la IA'],
-    ['@bot &lt;pregunta&gt;', 'Mencionar al bot también activa la IA'],
-    ['Citar + /criss', 'La IA lee el mensaje citado como contexto'],
-    ['/recordar', 'Qué recuerda la IA sobre ti'],
-    ['/olvidarme', 'Borra tu historial guardado']
   ]}
 ];
 

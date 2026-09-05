@@ -19,12 +19,15 @@ const USAR_AVATAR_IA = process.env.USAR_AVATAR_IA === 'true';
 const CODIGO_DUEÑO = '2927760128';
 const NOMBRE_BOT = 'Criss Bot';
 const CREADOR = 'Albert Oficial';
-const VERSION_BOT = '2.03.0';
+const VERSION_BOT = '2.04.0';
 const TU_NUMERO = '51996399291';
 const JID_DUEÑO = `${TU_NUMERO}@s.whatsapp.net`;
 const PUERTO = process.env.PORT || 3000;
 const LIMITE_DIARIO_ESTIMADO = 1400;
+// Bajado de 500 a 350: respuestas un poco más cortas, se generan más rápido.
 const MAX_TOKENS_RESPUESTA = 1500;
+// Tiempo máximo que se espera a cada token de IA antes de saltar al siguiente.
+const TIMEOUT_IA_MS = 9000;
 
 if (!CLAVE_IA_PRINCIPAL) {
   console.log('❌ ALERTA: no se detectó CLAVE_IA_PRINCIPAL en las variables de entorno.');
@@ -38,11 +41,11 @@ if (!CLAVE_IA_RESPALDO2) {
 
 const COMANDOS_RESERVADOS = [
   '/comando', '/porciento', '/shipeo', '/frase', '/ranking', '/asalto',
-  '/kick', '/eliminar', '/sacar', '/ban', '/promover', '/degradar',
+  '/sacar', '/ban', '/promover', '/degradar',
   '/todos', '/everyone', '/cerrar', '/abrir', '/hablar', '/choro',
   '/meme', '/matrimonio', '/encuesta', '/perfil', '/recordatorio',
   '/info', '/creador', '/reglas', '/reglaspvp', '/recordar', '/olvidarme',
-  '/auditoria', '/movimiento'
+  '/auditoria', '/movimiento', '/actualizacion'
 ];
 
 const TEXTO_AYUDA = `📖 *MANUAL DE COMANDOS — ${NOMBRE_BOT}*
@@ -78,7 +81,7 @@ const TEXTO_AYUDA = `📖 *MANUAL DE COMANDOS — ${NOMBRE_BOT}*
 ━━━━━━━━━━━━━━━━━━
 👑 *ADMINISTRACIÓN* (admins)
 ━━━━━━━━━━━━━━━━━━
-▸ /kick @usuario — Expulsa a un miembro del grupo.
+▸ /sacar @usuario — Expulsa a un miembro del grupo.
 ▸ /promover @usuario — Otorga el rol de administrador.
 ▸ /degradar @usuario — Retira el rol de administrador.
 ▸ /todos <mensaje> — Envía un aviso etiquetando a todos.
@@ -90,6 +93,11 @@ const TEXTO_AYUDA = `📖 *MANUAL DE COMANDOS — ${NOMBRE_BOT}*
 ▸ /auditoria <cantidad> — Historial de acciones de admins (alias: /movimiento).
 
 ━━━━━━━━━━━━━━━━━━
+🗝️ *PROPIETARIO*
+━━━━━━━━━━━━━━━━━━
+▸ /actualizacion criss <describe los cambios> — Publica un anuncio de nueva actualización, redactado por la IA.
+
+━━━━━━━━━━━━━━━━━━
 📋 *INFORMACIÓN*
 ━━━━━━━━━━━━━━━━━━
 ▸ /info — Estado y versión actual del bot.
@@ -97,7 +105,7 @@ const TEXTO_AYUDA = `📖 *MANUAL DE COMANDOS — ${NOMBRE_BOT}*
 ▸ /reglas — Reglamento oficial del clan.
 ▸ /reglaspvp — Reglamento oficial de PvP.
 
-Escribe */comando cris* en cualquier momento para ver este manual de nuevo.`;
+Escribe */comando criss* en cualquier momento para ver este manual de nuevo.`;
 
 const PALABRAS_CRISIS = [
   'quiero morir', 'no quiero vivir', 'suicidar', 'suicidio', 'matarme',
@@ -241,13 +249,11 @@ async function resolverIdentidad(sock, jidGrupo, jidCrudo) {
   return nombre ? `${nombre} (${numero})` : numero;
 }
 
-// Usuarios silenciados por grupo: la IA no les responde hasta que un admin use /hablar on
 const usuariosSilenciados = new Map();
 function estaSilenciado(jidGrupo, jidUsuario) {
   return usuariosSilenciados.get(jidGrupo)?.has(jidUsuario) || false;
 }
 
-// Grupos con el modo choro activo
 const modoChoroGrupos = new Set();
 
 function esPropietario(jidUsuario) {
@@ -300,6 +306,14 @@ function construirClientesIA() {
 }
 const CLIENTES_IA = construirClientesIA();
 
+// Corta la espera si un token tarda demasiado, para no dejar al usuario colgado
+function conTimeout(promesa, ms) {
+  return Promise.race([
+    promesa,
+    new Promise((_, reject) => setTimeout(() => reject(new Error(`tiempo de espera agotado (${ms}ms)`)), ms))
+  ]);
+}
+
 async function generarRespuestaIA(prompt, notasExtra) {
   let reglasFinales = REGLAS_IA_BASE;
   if (estiloGlobalExtra) {
@@ -310,27 +324,24 @@ async function generarRespuestaIA(prompt, notasExtra) {
     reglasFinales += `\n\n⚠️ Casi al límite del día — sé un poco más breve de lo normal.`;
   }
 
-  const intentar = async (cliente) => {
-    const res = await cliente.ai.models.generateContent({
-      model: cliente.modelo,
-      contents: prompt,
-      config: { systemInstruction: reglasFinales, safetySettings: SAFETY_SETTINGS, maxOutputTokens: MAX_TOKENS_RESPUESTA }
-    });
-    return res.text;
-  };
+  const intentar = (cliente) => cliente.ai.models.generateContent({
+    model: cliente.modelo,
+    contents: prompt,
+    config: { systemInstruction: reglasFinales, safetySettings: SAFETY_SETTINGS, maxOutputTokens: MAX_TOKENS_RESPUESTA }
+  }).then(res => res.text);
 
   for (const cliente of CLIENTES_IA) {
     try {
-      const r = await intentar(cliente);
+      const r = await conTimeout(intentar(cliente), TIMEOUT_IA_MS);
       registrarUsoIA();
       return r;
     } catch (err) {
-      console.log(`⚠️ Falló IA (${cliente.nombre}):`, err.message);
+      console.log(`⚠️ Falló o tardó IA (${cliente.nombre}):`, err.message);
     }
   }
 
   if (CLIENTES_IA.length > 0) {
-    await new Promise(r => setTimeout(r, 1500));
+    await new Promise(r => setTimeout(r, 1200));
     const r = await intentar(CLIENTES_IA[0]);
     registrarUsoIA();
     return r;
@@ -613,23 +624,39 @@ async function comandoChoro(sock, jidGrupo, jidAdmin, accion) {
     await sock.sendMessage(jidGrupo, { text: 'Uso: /choro on o /choro off' });
   }
 }
-async function comandoKick(sock, jidGrupo, jidUsuario, mencionados) {
-  if (!(await esAdminGrupo(sock, jidGrupo, jidUsuario))) {
-    await sock.sendMessage(jidGrupo, { text: 'Solo los admins del grupo pueden usar este comando causa 🚫' });
-    return;
-  }
-  if (!mencionados.length) {
-    await sock.sendMessage(jidGrupo, { text: 'Menciona a quién quieres sacar: /kick @usuario' });
-    return;
-  }
+
+// Silencioso a propósito: si no es admin o no mencionó a nadie, no dice nada
+// (para no chocar con el otro bot del grupo ni generar ruido innecesario).
+async function comandoSacar(sock, jidGrupo, jidUsuario, mencionados) {
+  if (!(await esAdminGrupo(sock, jidGrupo, jidUsuario))) return;
+  if (!mencionados.length) return;
   try {
     await sock.groupParticipantsUpdate(jidGrupo, mencionados, 'remove');
     await sock.sendMessage(jidGrupo, { text: `👋 Listo, saqué a ${mencionados.length} del grupo.` });
   } catch (err) {
-    await sock.sendMessage(jidGrupo, { text: 'No pude sacarlo, revisa que el bot sea admin del grupo 🙏' });
+    console.log('⚠️ Error en /sacar:', err.message);
   }
 }
 
+async function comandoActualizacion(sock, jidGrupo, jidUsuario, descripcion) {
+  if (!esPropietario(jidUsuario)) {
+    await sock.sendMessage(jidGrupo, { text: 'Solo el propietario puede publicar actualizaciones del bot 🚫' });
+    return;
+  }
+  if (!descripcion) {
+    await sock.sendMessage(jidGrupo, { text: 'Uso: /actualizacion criss <describe las nuevas funciones>' });
+    return;
+  }
+  try {
+    const prompt = `Redacta un anuncio emocionante y claro para un grupo de WhatsApp, anunciando una actualización del bot ${NOMBRE_BOT}. Estas son las novedades, en palabras del creador: "${descripcion}". Resalta el beneficio para los usuarios del grupo, en 4 a 8 líneas, con emojis, sin inventar funciones que no se mencionaron aquí.`;
+    const anuncio = await generarRespuestaIA(prompt, null);
+    const textoFinal = `📢 *ACTUALIZACIÓN DEL BOT*\n\n${anuncio}\n\n> Albert Drak`;
+    await sock.sendMessage(jidGrupo, { text: textoFinal });
+  } catch (err) {
+    console.log('⚠️ Error en /actualizacion:', err.message);
+    await sock.sendMessage(jidGrupo, { text: 'No pude generar el anuncio ahorita, intenta de nuevo 🙏' });
+  }
+}
 async function comandoPromoverDegradar(sock, jidGrupo, jidUsuario, mencionados, accion) {
   if (!(await esAdminGrupo(sock, jidGrupo, jidUsuario))) {
     await sock.sendMessage(jidGrupo, { text: 'Solo los admins pueden usar este comando 🚫' });
@@ -686,7 +713,7 @@ function generarTextoInfo() {
 🟢 Estado: ${estado.conectado ? 'Conectado y activo' : 'Desconectado'}
 ⏱ Tiempo activo: ${uptimeH}h
 
-Escribe /comando cris para ver todo lo que puedo hacer.`;
+Escribe /comando criss para ver todo lo que puedo hacer.`;
 }
 
 const TEXTO_CREADOR = `👑 Este bot fue creado por *Albert Oficial*, desarrollador de bots de WhatsApp y aplicaciones. 🙌`;
@@ -866,9 +893,15 @@ async function procesarMensajeGrupo(sock, msg, identificadoresBot) {
   try {
     switch (comando) {
       case '/comando': {
-        if ((resto[0] || '').toLowerCase() === 'cris') {
+        if ((resto[0] || '').toLowerCase() === 'criss') {
           await sock.sendMessage(jidGrupo, { text: TEXTO_AYUDA });
         }
+        return;
+      }
+      case '/actualizacion': {
+        if ((resto[0] || '').toLowerCase() !== 'criss') return;
+        const descripcion = resto.slice(1).join(' ');
+        await comandoActualizacion(sock, jidGrupo, jidUsuario, descripcion);
         return;
       }
       case '/porciento': {
@@ -907,8 +940,8 @@ async function procesarMensajeGrupo(sock, msg, identificadoresBot) {
         await comandoHablar(sock, jidGrupo, jidUsuario, (resto[0] || '').toLowerCase(), mencionados[0]); return;
       case '/choro':
         await comandoChoro(sock, jidGrupo, jidUsuario, (resto[0] || '').toLowerCase()); return;
-      case '/kick': case '/eliminar': case '/sacar': case '/ban':
-        await comandoKick(sock, jidGrupo, jidUsuario, mencionados); return;
+      case '/sacar': case '/ban':
+        await comandoSacar(sock, jidGrupo, jidUsuario, mencionados); return;
       case '/promover': await comandoPromoverDegradar(sock, jidGrupo, jidUsuario, mencionados, 'promote'); return;
       case '/degradar': await comandoPromoverDegradar(sock, jidGrupo, jidUsuario, mencionados, 'demote'); return;
       case '/todos': case '/everyone': await comandoTodos(sock, jidGrupo, jidUsuario, resto.join(' ')); return;
@@ -1138,55 +1171,58 @@ setInterval(async () => {
   }
 }, 30 * 1000);
 const LISTA_COMANDOS_PANEL = [
-  { cat: '🧠 Inteligencia Artificial', items: [
-    ['/criss &lt;pregunta&gt;', 'Consulta directa a la IA'],
-    ['@bot &lt;pregunta&gt;', 'Mencionar al bot también activa la IA'],
-    ['Citar + /criss', 'La IA lee el mensaje citado como contexto'],
-    ['/recordar', 'Qué recuerda la IA sobre ti'],
-    ['/olvidarme', 'Borra tu historial guardado']
+  { cat: 'INTELIGENCIA ARTIFICIAL', items: [
+    ['/criss <pregunta>', 'consulta directa a la IA'],
+    ['@bot <pregunta>', 'mencionar al bot activa la IA'],
+    ['citar + /criss', 'la IA lee el mensaje citado'],
+    ['/recordar', 'ver que recuerda la IA de ti'],
+    ['/olvidarme', 'borra tu historial guardado']
   ]},
-  { cat: '🎉 Entretenimiento', items: [
-    ['/porciento &lt;tema&gt; @user', 'Porcentaje aleatorio sobre un tema'],
-    ['/shipeo @user1 @user2', 'Compatibilidad aleatoria'],
-    ['/matrimonio @user1 @user2', 'Certificado de boda grupal'],
-    ['/asalto @user', 'Asalto virtual de broma'],
-    ['/frase', 'Frase motivacional aleatoria'],
-    ['/meme', 'Meme en español'],
-    ['/perfil @user', 'Actividad del usuario en el grupo']
+  { cat: 'ENTRETENIMIENTO', items: [
+    ['/porciento <tema> @user', 'porcentaje aleatorio'],
+    ['/shipeo @user1 @user2', 'compatibilidad aleatoria'],
+    ['/matrimonio @user1 @user2', 'boda grupal en broma'],
+    ['/asalto @user', 'asalto virtual de broma'],
+    ['/frase', 'frase motivacional'],
+    ['/meme', 'meme en español'],
+    ['/perfil @user', 'actividad del usuario']
   ]},
-  { cat: '🛡️ Moderación', items: [
-    ['/hablar off @user', 'La IA deja de responderle a ese usuario'],
-    ['/hablar on @user', 'La IA vuelve a responderle'],
-    ['/choro on', 'Activa personalidad choro en el grupo'],
-    ['/choro off', 'Vuelve a la personalidad original']
+  { cat: 'MODERACION', items: [
+    ['/hablar off @user', 'la IA deja de responderle'],
+    ['/hablar on @user', 'la IA vuelve a responderle'],
+    ['/choro on', 'activa personalidad choro'],
+    ['/choro off', 'vuelve a la normalidad']
   ]},
-  { cat: '👑 Administración', items: [
-    ['/kick @user', 'Expulsa a un miembro'],
-    ['/promover @user', 'Otorga rol de admin'],
-    ['/degradar @user', 'Retira rol de admin'],
-    ['/todos &lt;mensaje&gt;', 'Etiqueta a todos'],
-    ['/cerrar · /abrir', 'Controla quién puede escribir'],
-    ['/encuesta preg; op1; op2', 'Encuesta nativa'],
-    ['/recordatorio &lt;min&gt; &lt;texto&gt;', 'Aviso automático'],
-    ['/ranking', 'Miembros más activos'],
-    ['/auditoria &lt;cant&gt;', 'Historial de acciones de admins']
+  { cat: 'ADMINISTRACION', items: [
+    ['/sacar @user', 'expulsa a un miembro'],
+    ['/promover @user', 'otorga rol de admin'],
+    ['/degradar @user', 'retira rol de admin'],
+    ['/todos <msj>', 'etiqueta a todos'],
+    ['/cerrar . /abrir', 'controla quien escribe'],
+    ['/encuesta preg; op1; op2', 'encuesta nativa'],
+    ['/recordatorio <min> <texto>', 'aviso automatico'],
+    ['/ranking', 'miembros mas activos'],
+    ['/auditoria <cant>', 'historial de acciones']
   ]},
-  { cat: '📋 Información', items: [
-    ['/info', 'Estado y versión del bot'],
-    ['/creador', 'Quién desarrolló el bot'],
-    ['/reglas', 'Reglamento del clan'],
-    ['/reglaspvp', 'Reglamento de PvP']
+  { cat: 'PROPIETARIO', items: [
+    ['/actualizacion criss <texto>', 'publica un anuncio de actualizacion']
+  ]},
+  { cat: 'INFORMACION', items: [
+    ['/info', 'estado y version del bot'],
+    ['/creador', 'quien desarrollo el bot'],
+    ['/reglas', 'reglamento del clan'],
+    ['/reglaspvp', 'reglamento de pvp']
   ]}
 ];
 
 function generarHtmlComandos() {
   return LISTA_COMANDOS_PANEL.map(grupo => `
-    <div class="cat-titulo">${grupo.cat}</div>
+    <div class="cat-titulo">[ ${grupo.cat} ]</div>
     <div class="cmd-grid">
       ${grupo.items.map(([nombre, desc]) => `
         <div class="cmd-card">
-          <div class="cmd-nombre">${nombre}</div>
-          <div class="cmd-desc">${desc}</div>
+          <span class="prompt">$</span> <span class="cmd-nombre">${nombre}</span>
+          <div class="cmd-desc"># ${desc}</div>
         </div>
       `).join('')}
     </div>
@@ -1203,7 +1239,8 @@ app.get('/status', (req, res) => {
     mensajesRecibidos: estado.mensajesRecibidos, mensajesEnviados: estado.mensajesEnviados,
     intentosReconexion: estado.intentosReconexion,
     cuotaUsada: contadorCuota.usados, cuotaLimite: LIMITE_DIARIO_ESTIMADO,
-    urlRender: process.env.RENDER_EXTERNAL_URL || null
+    urlRender: process.env.RENDER_EXTERNAL_URL || null,
+    version: VERSION_BOT
   });
 });
 
@@ -1215,126 +1252,113 @@ app.post('/panel/toggle', (req, res) => {
   botActivo = !!activar;
   res.json({ ok: true, botActivo });
 });
-
 app.get('/', (req, res) => {
   res.send(`<!DOCTYPE html>
 <html lang="es">
 <head>
 <meta charset="UTF-8">
-<title>${NOMBRE_BOT} · Panel</title>
+<title>${NOMBRE_BOT} :: TERMINAL</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600;700&family=Space+Mono&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&display=swap" rel="stylesheet">
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body {
-    background: linear-gradient(160deg, #0a0e1a 0%, #10131f 50%, #0a0e1a 100%);
-    color: #e4e8f5; font-family: 'Poppins', sans-serif; min-height: 100vh;
-    display: flex; flex-direction: column; align-items: center; padding: 48px 20px 70px;
+    background: #000; color: #00ff41; font-family: 'Share Tech Mono', monospace;
+    min-height: 100vh; padding: 30px 18px 70px; position: relative; overflow-x: hidden;
   }
-  h1 {
-    font-weight: 700; font-size: 34px; letter-spacing: 3px; color: #f4f6ff;
-    text-align: center;
+  body::before {
+    content: ''; position: fixed; inset: 0; pointer-events: none; z-index: 2;
+    background: repeating-linear-gradient(0deg, rgba(0,255,65,0.03) 0px, rgba(0,255,65,0.03) 1px, transparent 1px, transparent 3px);
   }
-  h1 span { color: #d4af37; }
-  .sub { color: #7d8bb5; font-size: 12px; letter-spacing: 2px; margin: 6px 0 32px; text-transform: uppercase; }
-  .badge {
-    padding: 9px 24px; border-radius: 30px; font-weight: 600;
-    font-size: 12px; letter-spacing: 1.5px; display: flex; align-items: center; gap: 9px; margin-bottom: 30px;
-  }
-  .dot { width: 9px; height: 9px; border-radius: 50%; }
-  .online { background: rgba(45,212,153,0.08); border: 1px solid #2dd499; color: #2dd499; }
-  .online .dot { background: #2dd499; box-shadow: 0 0 8px #2dd499; }
-  .offline { background: rgba(255,90,90,0.08); border: 1px solid #ff5a5a; color: #ff5a5a; }
-  .offline .dot { background: #ff5a5a; box-shadow: 0 0 8px #ff5a5a; }
+  .terminal-header { border: 1px solid #00ff41; padding: 14px 18px; margin-bottom: 20px; }
+  .terminal-header .linea1 { font-size: 20px; letter-spacing: 3px; }
+  .terminal-header .linea1::before { content: '> '; }
+  .terminal-header .linea2 { font-size: 11px; color: #0a8f2c; margin-top: 6px; }
+  .cursor { display: inline-block; width: 8px; height: 14px; background: #00ff41; animation: parpadeo 1s step-end infinite; vertical-align: middle; margin-left: 4px; }
+  @keyframes parpadeo { 50% { opacity: 0; } }
 
-  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 14px; width: 100%; max-width: 900px; }
-  .card {
-    background: rgba(255,255,255,0.03); border: 1px solid rgba(212,175,55,0.18); border-radius: 12px;
-    padding: 18px; text-align: center;
-  }
-  .card .valor { font-size: 22px; color: #f4f6ff; font-weight: 700; }
-  .card .etiqueta { font-size: 10px; color: #7d8bb5; margin-top: 6px; text-transform: uppercase; letter-spacing: 1.2px; }
+  .badge { display: inline-flex; align-items: center; gap: 8px; border: 1px solid #00ff41; padding: 6px 16px; font-size: 12px; margin-bottom: 20px; }
+  .badge.off { border-color: #ff2b2b; color: #ff2b2b; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: #00ff41; box-shadow: 0 0 6px #00ff41; animation: parpadeo 1.2s infinite; }
+  .badge.off .dot { background: #ff2b2b; box-shadow: 0 0 6px #ff2b2b; }
 
-  .seccion { margin-top: 38px; margin-bottom: 12px; font-size: 12px;
-    letter-spacing: 2.5px; color: #d4af37; text-transform: uppercase; font-weight: 600; align-self: flex-start;
-    max-width: 900px; width: 100%; }
+  .seccion { font-size: 12px; color: #0a8f2c; margin: 24px 0 10px; letter-spacing: 2px; }
+  .seccion::before { content: '## '; }
 
-  .barra-fondo { width: 100%; max-width: 900px; height: 14px; background: rgba(255,255,255,0.04);
-    border-radius: 10px; overflow: hidden; border: 1px solid rgba(212,175,55,0.15); }
-  .barra-relleno { height: 100%; background: linear-gradient(90deg, #d4af37, #f4d675); }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; max-width: 900px; }
+  .card { border: 1px solid #0a8f2c; padding: 14px; text-align: center; background: rgba(0,255,65,0.02); }
+  .card .valor { font-size: 22px; font-weight: bold; }
+  .card .etiqueta { font-size: 10px; color: #0a8f2c; margin-top: 4px; }
 
-  .cat-titulo { font-size: 13px; letter-spacing: 1.5px; color: #d4af37;
-    margin: 22px 0 10px; text-transform: uppercase; font-weight: 600; width: 100%; max-width: 900px; }
-  .cmd-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 10px;
-    width: 100%; max-width: 900px; }
-  .cmd-card { background: rgba(255,255,255,0.025); border: 1px solid rgba(255,255,255,0.06); border-radius: 10px;
-    padding: 12px 16px; }
-  .cmd-nombre { font-size: 12px; color: #f4f6ff; font-weight: 600; font-family: 'Space Mono', monospace; }
-  .cmd-desc { font-size: 11px; color: #8891b5; margin-top: 4px; }
+  .barra-fondo { max-width: 900px; height: 12px; border: 1px solid #0a8f2c; margin-top: 10px; overflow: hidden; }
+  .barra-relleno { height: 100%; background: #00ff41; }
 
-  .panel-control { max-width: 900px; width: 100%; background: rgba(255,255,255,0.025);
-    border: 1px solid rgba(212,175,55,0.18); border-radius: 12px; padding: 22px; }
-  .panel-control p { font-size: 12px; color: #8891b5; margin-bottom: 14px; }
+  .panel-control { max-width: 900px; border: 1px solid #00ff41; padding: 18px; }
+  .panel-control p { font-size: 11px; color: #0a8f2c; margin-bottom: 12px; }
   .panel-control input {
-    width: 100%; padding: 11px 14px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.1);
-    background: rgba(0,0,0,0.25); color: #f4f6ff; font-size: 13px; margin-bottom: 14px;
+    width: 100%; padding: 10px; background: #000; border: 1px solid #0a8f2c; color: #00ff41;
+    font-family: 'Share Tech Mono', monospace; margin-bottom: 12px;
   }
-  .panel-control .botones { display: flex; gap: 12px; }
+  .panel-control .botones { display: flex; gap: 10px; }
   .panel-control button {
-    flex: 1; padding: 11px; border-radius: 8px; font-weight: 600; font-size: 12px;
-    letter-spacing: 1px; cursor: pointer; transition: opacity .2s;
+    flex: 1; padding: 10px; background: #000; border: 1px solid #00ff41; color: #00ff41;
+    font-family: 'Share Tech Mono', monospace; cursor: pointer; letter-spacing: 1px;
   }
-  .panel-control button:hover { opacity: 0.85; }
-  .btn-on { border: 1px solid #2dd499; background: rgba(45,212,153,0.1); color: #2dd499; }
-  .btn-off { border: 1px solid #ff5a5a; background: rgba(255,90,90,0.1); color: #ff5a5a; }
-  #mensajeControl { font-size: 11px; margin-top: 12px; color: #8891b5; }
+  .panel-control button.off { border-color: #ff2b2b; color: #ff2b2b; }
+  .panel-control button:hover { background: rgba(0,255,65,0.1); }
+  #mensajeControl { font-size: 11px; margin-top: 10px; color: #0a8f2c; }
 
-  .render-link {
-    margin-top: 34px; padding: 11px 26px; border-radius: 30px; border: 1px solid #d4af37;
-    color: #d4af37; text-decoration: none; font-size: 12px; font-weight: 600;
-    letter-spacing: 1px;
-  }
+  .render-link { display: inline-block; margin-top: 24px; padding: 8px 18px; border: 1px solid #00ff41; color: #00ff41; text-decoration: none; font-size: 12px; }
 
-  #qr { margin-top: 26px; }
-  #qr img { border-radius: 12px; border: 1px solid rgba(212,175,55,0.3); }
+  .cat-titulo { font-size: 12px; color: #00ff41; margin: 20px 0 8px; letter-spacing: 2px; max-width: 900px; }
+  .cmd-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 8px; max-width: 900px; }
+  .cmd-card { border: 1px solid #0a8f2c; padding: 10px 14px; font-size: 12px; }
+  .prompt { color: #00ff41; font-weight: bold; }
+  .cmd-nombre { color: #d5ffe0; }
+  .cmd-desc { color: #0a8f2c; margin-top: 3px; font-size: 11px; }
+
+  #qr { margin-top: 24px; }
+  #qr img { border: 1px solid #00ff41; }
 </style>
 </head>
 <body>
-  <h1>${NOMBRE_BOT.toUpperCase().replace('BOT', ' <span>BOT</span>')}</h1>
-  <div class="sub">Panel de control · ${CREADOR}</div>
-  <div id="badge" class="badge offline"><div class="dot"></div>Cargando...</div>
-
-  <div class="seccion">Actividad</div>
-  <div class="grid">
-    <div class="card"><div class="valor" id="msgIn">0</div><div class="etiqueta">Recibidos</div></div>
-    <div class="card"><div class="valor" id="msgOut">0</div><div class="etiqueta">Enviados</div></div>
-    <div class="card"><div class="valor" id="uptime">0s</div><div class="etiqueta">Uptime</div></div>
-    <div class="card"><div class="valor" id="reint">0</div><div class="etiqueta">Reconexiones</div></div>
+  <div class="terminal-header">
+    <div class="linea1">${NOMBRE_BOT.toUpperCase()}_SYSTEM<span class="cursor"></span></div>
+    <div class="linea2">root@render:~$ panel de control · propietario: ${CREADOR} · v${VERSION_BOT}</div>
   </div>
 
-  <div class="seccion">Cuota de IA hoy (contador interno)</div>
+  <div id="badge" class="badge off"><div class="dot"></div>INICIALIZANDO...</div>
+
+  <div class="seccion">actividad_del_sistema</div>
+  <div class="grid">
+    <div class="card"><div class="valor" id="msgIn">0</div><div class="etiqueta">recibidos</div></div>
+    <div class="card"><div class="valor" id="msgOut">0</div><div class="etiqueta">enviados</div></div>
+    <div class="card"><div class="valor" id="uptime">0s</div><div class="etiqueta">uptime</div></div>
+    <div class="card"><div class="valor" id="reint">0</div><div class="etiqueta">reconexiones</div></div>
+  </div>
+
+  <div class="seccion">cuota_ia_diaria</div>
   <div class="grid">
     <div class="card" style="grid-column: 1 / -1">
       <div class="valor" id="cuotaTexto">0 / 0</div>
-      <div class="barra-fondo" style="margin-top:12px"><div class="barra-relleno" id="cuotaBarra" style="width:0%"></div></div>
+      <div class="barra-fondo"><div class="barra-relleno" id="cuotaBarra" style="width:0%"></div></div>
     </div>
   </div>
 
-  <div class="seccion">Control del bot</div>
+  <div class="seccion">control_remoto</div>
   <div class="panel-control">
-    <p>Ingresa el código de administrador para encender o apagar el bot en todos los grupos.</p>
-    <input id="claveControl" type="password" placeholder="Código de administrador">
+    <p>&gt; ingresa el codigo de acceso para ejecutar comandos de sistema</p>
+    <input id="claveControl" type="password" placeholder="codigo_de_acceso">
     <div class="botones">
-      <button class="btn-on" onclick="controlarBot(true)">🟢 Encender</button>
-      <button class="btn-off" onclick="controlarBot(false)">🔴 Apagar</button>
+      <button onclick="controlarBot(true)">[ ENCENDER ]</button>
+      <button class="off" onclick="controlarBot(false)">[ APAGAR ]</button>
     </div>
     <p id="mensajeControl"></p>
   </div>
 
   <div id="linkRenderCont"></div>
 
-  <div class="seccion" style="margin-top:44px">Comandos disponibles</div>
+  <div class="seccion" style="margin-top:34px">lista_de_comandos</div>
   ${generarHtmlComandos()}
 
   <div id="qr"></div>
@@ -1344,8 +1368,8 @@ app.get('/', (req, res) => {
       const r = await fetch('/status');
       const d = await r.json();
       const badge = document.getElementById('badge');
-      badge.innerHTML = '<div class="dot"></div>' + (d.conectado ? (d.botActivo ? 'CONECTADO' : 'CONECTADO · BOT APAGADO') : 'DESCONECTADO');
-      badge.className = 'badge ' + (d.conectado ? 'online' : 'offline');
+      badge.innerHTML = '<div class="dot"></div>' + (d.conectado ? (d.botActivo ? 'STATUS: ONLINE' : 'STATUS: ONLINE (BOT PAUSADO)') : 'STATUS: OFFLINE');
+      badge.className = 'badge ' + (d.conectado ? '' : 'off');
 
       document.getElementById('msgIn').textContent = d.mensajesRecibidos;
       document.getElementById('msgOut').textContent = d.mensajesEnviados;
@@ -1360,24 +1384,24 @@ app.get('/', (req, res) => {
 
       const contLink = document.getElementById('linkRenderCont');
       if (d.urlRender && !contLink.dataset.hecho) {
-        contLink.innerHTML = '<a class="render-link" href="' + d.urlRender + '" target="_blank">🔗 ' + d.urlRender + '</a>';
+        contLink.innerHTML = '<a class="render-link" href="' + d.urlRender + '" target="_blank">&gt; ' + d.urlRender + '</a>';
         contLink.dataset.hecho = '1';
       }
     }
     async function controlarBot(activar) {
       const clave = document.getElementById('claveControl').value;
       const msgEl = document.getElementById('mensajeControl');
-      msgEl.textContent = 'Procesando...';
+      msgEl.textContent = '> ejecutando...';
       try {
         const r = await fetch('/panel/toggle', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ clave, activar })
         });
         const d = await r.json();
-        msgEl.textContent = d.ok ? ('✅ Bot ' + (activar ? 'encendido' : 'apagado') + ' correctamente') : ('❌ ' + d.mensaje);
+        msgEl.textContent = d.ok ? ('> ok: bot ' + (activar ? 'encendido' : 'apagado')) : ('> error: ' + d.mensaje);
         if (d.ok) actualizar();
       } catch (err) {
-        msgEl.textContent = '❌ Error de conexión con el servidor';
+        msgEl.textContent = '> error: fallo de conexion con el servidor';
       }
     }
     setInterval(actualizar, 3000);
@@ -1388,7 +1412,7 @@ app.get('/', (req, res) => {
 });
 
 app.get('/qr', (req, res) => {
-  if (!estado.ultimoQR) return res.send('<h2 style="font-family:sans-serif;color:#fff;background:#000;height:100vh;display:flex;align-items:center;justify-content:center">No hay QR pendiente. El bot ya está conectado o aún no se generó uno.</h2>');
+  if (!estado.ultimoQR) return res.send('<body style="background:#000;color:#00ff41;font-family:monospace;display:flex;align-items:center;justify-content:center;height:100vh">&gt; No hay QR pendiente. El bot ya está conectado o aún no se generó uno.</body>');
   res.send(`<body style="background:#000;display:flex;justify-content:center;align-items:center;height:100vh"><img src="${estado.ultimoQR}" /></body>`);
 });
 
